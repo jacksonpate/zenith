@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 330" font-size="15">
+  <rect x="2" y="2" width="756" height="326" rx="14" fill="#141317" stroke="#2c2b33" stroke-width="2"/>
+  <rect x="2" y="2" width="756" height="40" rx="14" fill="#1e1d23"/>
+  <rect x="2" y="28" width="756" height="14" fill="#1e1d23"/>
+  <circle cx="30" cy="22" r="7" fill="#ff5f57"/><circle cx="54" cy="22" r="7" fill="#febc2e"/><circle cx="78" cy="22" r="7" fill="#28c840"/>
+  <text x="380" y="27" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13" fill="#6f6a7a">zenith — streaming host</text>
+  <text x="36" y="78" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="15" fill="#6f6a7a">pate@zenith:~$ <tspan fill="#a855f7">zenithfetch</tspan></text>
+<text x="36" y="112" xml:space="preserve" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="16" fill="#a855f7">      \  |  /</text>
+<text x="36" y="136" xml:space="preserve" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="16" fill="#a855f7">   ─    ●    ─</text>
+<text x="36" y="160" xml:space="preserve" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="16" fill="#e8eaee">      ◢◤▲◥◣</text>
+<text x="36" y="184" xml:space="preserve" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="16" fill="#8b30d9">     ◢█████◣</text>
+<text x="36" y="208" xml:space="preserve" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="16" fill="#8b30d9">    ◢███████◣</text>
+<text x="36" y="232" xml:space="preserve" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="16" fill="#6d1fb8">   ◢█████████◣</text>
+<text x="36" y="256" xml:space="preserve" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="16" fill="#6d1fb8">  ◢███████████◣</text>
+<text x="36" y="280" xml:space="preserve" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="16" fill="#4c2680"> ◢█████████████◣</text>
+<text x="270" y="112" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="15"><tspan fill="#a855f7" font-weight="bold">host     </tspan><tspan fill="#d6d3de" xml:space="preserve"> Zenith — Linux-first Sunshine fork</tspan></text>
+<text x="270" y="138" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="15"><tspan fill="#a855f7" font-weight="bold">encoders </tspan><tspan fill="#d6d3de" xml:space="preserve"> NVENC · VAAPI · Vulkan · x264/x265</tspan></text>
+<text x="270" y="164" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="15"><tspan fill="#a855f7" font-weight="bold">capture  </tspan><tspan fill="#d6d3de" xml:space="preserve"> KMS · PipeWire · wlroots · X11</tspan></text>
+<text x="270" y="190" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="15"><tspan fill="#a855f7" font-weight="bold">mic      </tspan><tspan fill="#d6d3de" xml:space="preserve"> Zenith Mic — client mic as PipeWire source</tspan></text>
+<text x="270" y="216" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="15"><tspan fill="#a855f7" font-weight="bold">packages </tspan><tspan fill="#d6d3de" xml:space="preserve"> deb · rpm (x86_64 + aarch64/Asahi) · AppImage</tspan></text>
+<text x="270" y="242" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="15"><tspan fill="#a855f7" font-weight="bold">client   </tspan><tspan fill="#d6d3de" xml:space="preserve"> any Moonlight, enhanced clients supported</tspan></text>
+<text x="270" y="268" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="15"><tspan fill="#a855f7" font-weight="bold">license  </tspan><tspan fill="#d6d3de" xml:space="preserve"> GPL-3.0 · forked from LizardByte/Sunshine</tspan></text>
+  <circle cx="278" cy="300" r="8" fill="#2e2d33"/><circle cx="304" cy="300" r="8" fill="#D93036"/><circle cx="330" cy="300" r="8" fill="#3FB950"/><circle cx="356" cy="300" r="8" fill="#E3A008"/><circle cx="382" cy="300" r="8" fill="#4c8dd9"/><circle cx="408" cy="300" r="8" fill="#8b30d9"/><circle cx="434" cy="300" r="8" fill="#a855f7"/><circle cx="460" cy="300" r="8" fill="#e8eaee"/>
+</svg>
