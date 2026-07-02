@@ -33,7 +33,7 @@ metadata, event-driven capture pacing. Zenith ports the ideas, not the Windows c
 
 ### M0 — Foundation (now)
 - [x] Fork upstream, build on Linux Mint 22.3 (Ubuntu 24.04 base), GTX 1660 Ti
-- [ ] CI: build deb (Ubuntu 22.04/24.04, Debian), rpm (Fedora), AppImage on every push
+- [x] CI: build deb (Ubuntu 24.04, Debian 13), rpm (Fedora 42, x86_64 + aarch64/Asahi) on every push
 - [ ] Side-by-side install story (doesn't fight a packaged Sunshine on the same box)
 
 ### M1 — Remote microphone (client mic → host)
