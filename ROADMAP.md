@@ -69,7 +69,18 @@ EMA smoothing, injected as HEVC/AV1 metadata) off HLSL:
 - HLG (BT.2100) transfer support alongside HDR10 PQ
 - Gated on GNOME HDR maturity; wired to `mutter` HDR session state
 
-### M5 — Quality-of-life from the fork ecosystem
+### M5 — Remote camera ("Zenith Cam") — full native, no shortcuts
+Client camera (iPad/phone) as a host virtual webcam. First in the Moonlight ecosystem —
+nobody sends camera today (verified: Foundation's "webcam" strings are AMF encoder presets;
+VoidLink does mic only). Decision 2026-07-02: skip the RTSP stopgap, build it native.
+- Protocol: new stream type `cam` mirroring the mic design — RTSP SETUP negotiation,
+  UDP at base+13, encrypted once the mic AES path lands
+- Host: decode via in-tree FFmpeg (VAAPI/NVDEC) → `v4l2loopback` virtual webcam
+  ("Zenith Cam") next to "Zenith Mic"
+- Client: moonlight-android fork first (buildable/sideloadable today), iOS/iPad when a
+  Mac toolchain exists in the lab
+
+### M6 — Quality-of-life from the fork ecosystem
 - Web UI: live session dashboard (per-stage latency, encoder stats, client info)
 - Smarter pairing UX (named clients, per-client permissions)
 - Optional clipboard sync (PipeWire/portal-friendly, opt-in)
