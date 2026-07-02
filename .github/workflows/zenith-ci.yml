@@ -11,6 +11,9 @@ name: Zenith CI
 on:
   push:
     branches: [master]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
   pull_request:
   workflow_dispatch:
 
