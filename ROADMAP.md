@@ -52,7 +52,12 @@ Kill the last timer-driven sampling in the Linux capture path:
 - Instrument: capture→encode→send timestamps per frame, exposed as stats (Foundation-style)
 
 ### M3 — Per-client display profiles + virtual display lifecycle
-The Apollo/Foundation "VDD manager" concept, Linux-native:
+The Apollo/Foundation "VDD manager" concept, Linux-native. **Hard requirement: works across
+the full distro/desktop matrix we package for — not GNOME-only.** Design = a virtual-display
+backend abstraction (same auto-probe philosophy as capture/encoders), best available wins:
+Mutter RecordVirtual (GNOME) · KWin virtual outputs (KDE — Asahi's default desktop) ·
+wlroots headless outputs · EVDI kernel module (compositor-agnostic/X11 fallback) ·
+static EDID connector-force (manual floor, NVIDIA-quirk-proof).
 - Per-paired-client profiles (resolution / refresh / HDR / target display), keyed by client cert
 - On session start, apply the client's mode to the target output:
   - NVIDIA: virtual connector (EDID override on a headless DP) modeset
