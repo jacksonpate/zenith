@@ -2590,3 +2590,98 @@ p {
         bottom: var(--spacing-sm);
     }
 }
+
+/* ============================================================
+   Zenith Ultraviolet theme — charcoal/black field, violet accents
+   Palette: #0f0f11 black, #1b1c1f charcoal, #232326 panels,
+            #8b30d9 ultraviolet, #a855f7 light violet, #6d1fb8 deep
+   ============================================================ */
+:root {
+  --zen-uv: #8b30d9;
+  --zen-uv-light: #a855f7;
+  --zen-uv-deep: #6d1fb8;
+  --bs-primary: var(--zen-uv);
+  --bs-primary-rgb: 139, 48, 217;
+  --bs-link-color: var(--zen-uv-light);
+  --bs-link-hover-color: #c084fc;
+}
+
+[data-bs-theme="dark"] {
+  --bs-body-bg: #131315;
+  --bs-body-color: #d6d3de;
+  --bs-secondary-bg: #1b1c1f;
+  --bs-tertiary-bg: #232326;
+  --bs-border-color: #2e2f34;
+  --bs-link-color: var(--zen-uv-light);
+  --bs-link-hover-color: #c084fc;
+}
+
+[data-bs-theme="dark"] body {
+  background: #131315;
+}
+
+[data-bs-theme="dark"] .navbar {
+  background-color: #0f0f11 !important;
+  border-bottom: 1px solid #2e2f34;
+}
+
+[data-bs-theme="dark"] .card,
+[data-bs-theme="dark"] .modal-content,
+[data-bs-theme="dark"] .list-group-item {
+  background-color: #1b1c1f;
+  border-color: #2e2f34;
+}
+
+[data-bs-theme="dark"] .card-header {
+  background-color: #232326;
+  border-bottom-color: #2e2f34;
+}
+
+.btn-primary {
+  --bs-btn-bg: var(--zen-uv);
+  --bs-btn-border-color: var(--zen-uv-deep);
+  --bs-btn-hover-bg: var(--zen-uv-light);
+  --bs-btn-hover-border-color: var(--zen-uv);
+  --bs-btn-active-bg: var(--zen-uv-deep);
+  --bs-btn-active-border-color: var(--zen-uv-deep);
+  --bs-btn-disabled-bg: #4b2670;
+  --bs-btn-disabled-border-color: #4b2670;
+}
+
+.btn-success {
+  --bs-btn-bg: var(--zen-uv);
+  --bs-btn-border-color: var(--zen-uv-deep);
+  --bs-btn-hover-bg: var(--zen-uv-light);
+  --bs-btn-hover-border-color: var(--zen-uv);
+  --bs-btn-active-bg: var(--zen-uv-deep);
+  --bs-btn-active-border-color: var(--zen-uv-deep);
+}
+
+[data-bs-theme="dark"] .nav-tabs .nav-link.active,
+[data-bs-theme="dark"] .nav-pills .nav-link.active {
+  background-color: var(--zen-uv);
+  color: #fff;
+  border-color: var(--zen-uv-deep);
+}
+
+[data-bs-theme="dark"] .form-control,
+[data-bs-theme="dark"] .form-select {
+  background-color: #232326;
+  border-color: #35363c;
+  color: #e6e2ef;
+}
+
+[data-bs-theme="dark"] .form-control:focus,
+[data-bs-theme="dark"] .form-select:focus {
+  border-color: var(--zen-uv);
+  box-shadow: 0 0 0 0.2rem rgba(139, 48, 217, 0.30);
+}
+
+.form-check-input:checked {
+  background-color: var(--zen-uv);
+  border-color: var(--zen-uv-deep);
+}
+
+[data-bs-theme="dark"] a {
+  color: var(--zen-uv-light);
+}
