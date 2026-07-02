@@ -832,6 +832,21 @@ namespace platf {
     virtual std::optional<sink_t> sink_info() = 0;
 
     /**
+     * @brief Write one remote-microphone Opus payload received from a Moonlight client.
+     *
+     * Backends that support mic redirection decode the payload and feed a virtual
+     * capture device ("Zenith Mic"). The payload is already decrypted by the caller.
+     *
+     * @param data Opus frame payload.
+     * @param size Payload size in bytes.
+     * @param seq RTP sequence number of the packet (little-endian decoded).
+     * @return Bytes consumed on success, -1 when unsupported or on failure.
+     */
+    virtual int write_mic_data(const char *data, std::size_t size, std::uint16_t seq) {
+      return -1;
+    }
+
+    /**
      * @brief Destroy the audio control.
      */
     virtual ~audio_control_t() = default;

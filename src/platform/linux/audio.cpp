@@ -19,6 +19,10 @@
 #include "src/platform/common.h"
 #include "src/thread_safe.h"
 
+#ifdef SUNSHINE_BUILD_PIPEWIRE_MIC
+  #include "src/platform/linux/mic_write.h"
+#endif
+
 namespace platf {
   using namespace std::literals;
 
@@ -616,6 +620,20 @@ namespace platf {
         BOOST_LOG(warning) << "audio_control_t::is_sink_available() unimplemented: "sv << sink;
         return true;
       }
+
+#ifdef SUNSHINE_BUILD_PIPEWIRE_MIC
+      int write_mic_data(const char *data, std::size_t size, std::uint16_t seq) override {
+        if (!mic_out) {
+          mic_out = pw_mic::create();
+          if (!mic_out) {
+            return -1;
+          }
+        }
+        return mic_out->write(data, size, seq);
+      }
+
+      std::unique_ptr<pw_mic::mic_out_t> mic_out;
+#endif
 
       /**
        * @brief Update the sink value on the backend.
