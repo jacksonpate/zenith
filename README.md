@@ -4,9 +4,18 @@
     alt="Sunshine icon"
     width="256"
 />
-  <h1 align="center">Sunshine</h1>
-  <h4 align="center">Self-hosted game stream host for Moonlight.</h4>
+  <h1 align="center">Zenith</h1>
+  <h4 align="center">Linux-first fork of Sunshine — self-hosted game stream host for Moonlight.</h4>
 </div>
+
+> [!NOTE]
+> **Zenith** is a fork of [LizardByte/Sunshine](https://github.com/LizardByte/Sunshine) that
+> treats Linux as the first-class target: NVIDIA **and** AMD, GNOME/Wayland as the reference
+> desktop, packaged for Ubuntu/Debian/Mint (deb), Fedora (rpm, x86_64 + aarch64 incl. Asahi),
+> and AppImage. It ports the *ideas* behind the Windows-only forks (Apollo,
+> Sunshine-Foundation) — per-client virtual display profiles, remote microphone,
+> present-paced capture, per-frame HDR metadata — without their Windows-driver architecture.
+> See [ROADMAP.md](ROADMAP.md). Everything below is upstream's original README.
 
 <div align="center">
   <a href="https://github.com/LizardByte/Sunshine"><img src="https://img.shields.io/github/stars/lizardbyte/sunshine.svg?logo=github&style=for-the-badge" alt="GitHub stars"></a>
