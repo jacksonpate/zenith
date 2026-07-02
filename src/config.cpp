@@ -678,7 +678,7 @@ namespace config {
     },
 
     {},  // capture
-    "timer",  // capture_pacing (Zenith)
+    "auto",  // capture_pacing (Zenith): vblank-paced when client fps fits the display refresh
     {},  // encoder
     {},  // adapter_name
     {},  // output_name

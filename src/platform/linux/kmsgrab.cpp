@@ -1423,14 +1423,18 @@ namespace platf {
       /**
        * @brief Zenith M2: configure present-paced capture from the CRTC's current mode.
        *
-       * When `capture_pacing = vblank`, the capture loop wakes on DRM CRTC sequence
-       * events (i.e. at scanout) instead of a steady-clock timer, removing up to a
-       * frame of sampling staleness. Falls back to timer pacing when the driver
-       * doesn't support the sequence ioctl (returns via wait_vblank()).
+       * With `capture_pacing = vblank` (or `auto`, the default), the capture loop wakes
+       * on DRM CRTC sequence events (i.e. at scanout) instead of a steady-clock timer,
+       * removing up to a frame of sampling staleness and keeping the capture copy off
+       * the compositor's render window. `auto` steps aside when the client requests
+       * more fps than the display refreshes (vblank events would cap delivery at the
+       * refresh rate; a timer can oversample). Falls back to timer pacing when the
+       * driver doesn't support the sequence ioctl (returns via wait_vblank()).
        */
       void init_pacing(const ::video::config_t &config) {
         vblank_pacing = false;
-        if (config::video.capture_pacing != "vblank"sv) {
+        const auto &mode = config::video.capture_pacing;
+        if (mode != "vblank"sv && mode != "auto"sv) {
           return;
         }
         std::uint32_t refresh = 60;
@@ -1441,6 +1445,11 @@ namespace platf {
           drmModeFreeCrtc(crtc);
         }
         std::uint32_t fps = config.framerate > 0 ? (std::uint32_t) config.framerate : 60;
+        if (mode == "auto"sv && fps > refresh) {
+          BOOST_LOG(info) << "Present-paced capture: client "sv << fps << "fps exceeds display "sv
+                          << refresh << "Hz; staying on timer pacing"sv;
+          return;
+        }
         vblank_interval = std::max<std::uint32_t>(1, (refresh + fps / 2) / fps);
         vblank_pacing = true;
         BOOST_LOG(info) << "Present-paced capture: display "sv << refresh << "Hz, client "sv << fps
