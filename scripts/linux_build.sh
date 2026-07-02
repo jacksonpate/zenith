@@ -928,6 +928,14 @@ elif grep -q 'VERSION_ID="26.04"' /etc/os-release; then
   fi
   gcc_version="14"
   nvm_node=0
+elif grep -q '^ID_LIKE=.*ubuntu' /etc/os-release && grep -q '^UBUNTU_CODENAME=noble' /etc/os-release; then
+  # Ubuntu 24.04 derivatives, e.g. Linux Mint 22.x
+  distro="ubuntu"
+  version="24.04"
+  package_update_command="${sudo_cmd} apt-get update"
+  package_install_command="${sudo_cmd} apt-get install -y"
+  gcc_version="14"
+  nvm_node=1
 else
   echo "Unsupported Distro or Version"
   exit 1
