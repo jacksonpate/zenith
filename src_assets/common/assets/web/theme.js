@@ -7,7 +7,9 @@ export const getPreferredTheme = () => {
         return storedTheme
     }
 
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    // Zenith defaults to dark (the ultraviolet theme) regardless of system
+    // preference; users can still switch via the navbar theme menu.
+    return 'dark'
 }
 
 // Define which themes are dark (for Bootstrap compatibility)

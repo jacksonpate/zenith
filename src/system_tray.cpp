@@ -80,6 +80,10 @@ namespace system_tray {
     launch_ui();
   }
 
+  void tray_zenith_repo_cb([[maybe_unused]] struct tray_menu *item) {
+    platf::open_url("https://github.com/jacksonpate/zenith");
+  }
+
   void tray_donate_github_cb([[maybe_unused]] struct tray_menu *item) {
     platf::open_url("https://github.com/sponsors/LizardByte");
   }
@@ -153,9 +157,10 @@ namespace system_tray {
     .menu =
       (struct tray_menu[]) {
         // todo - use boost/locale to translate menu strings
-        {.text = "Open Sunshine", .cb = tray_open_ui_cb},
+        {.text = "Open Zenith", .cb = tray_open_ui_cb},
+        {.text = "Zenith on GitHub", .cb = tray_zenith_repo_cb},
         {.text = "-"},
-        {.text = "Donate",
+        {.text = "Support Upstream (LizardByte)",
          .submenu =
            (struct tray_menu[]) {
              {.text = "GitHub Sponsors", .cb = tray_donate_github_cb},
