@@ -45,8 +45,14 @@ clients (qiin2333 moonlight-qt / moonlight-android) that already send mic audio.
 
 ### M2 — Present-paced capture ("encode-on-present")
 Kill the last timer-driven sampling in the Linux capture path:
-- KMS path: pace off DRM CRTC sequence events (`drmCrtcQueueSequence`) instead of
-  steady-clock sleeps — wake exactly at scanout, encode immediately
+- ✅ **KMS path shipped (2026-07-02)**: paces off DRM CRTC sequence events
+  (`drmCrtcQueueSequence`) instead of steady-clock sleeps — wake exactly at scanout,
+  encode immediately. `capture_pacing = auto` (default) uses vblank pacing when the
+  client fps fits the display refresh, timer when the client oversamples; `vblank` /
+  `timer` force either. Measured on RX 6800 at 2420×1668: **~16ms → ~6-9ms host
+  processing latency**. nvidia-drm doesn't implement the sequence ioctl (EOPNOTSUPP);
+  NVIDIA hosts auto-fall back to timer pacing. amdgpu delivers events even on
+  EDID-forced virtual connectors.
 - PipeWire/portal path (GNOME/Wayland): frames are already compositor-pushed; audit the
   buffer chain for hidden copies/waits and surface per-stage latency in the web UI
 - Instrument: capture→encode→send timestamps per frame, exposed as stats (Foundation-style)

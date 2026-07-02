@@ -29,8 +29,9 @@ GNOME/Wayland as the reference desktop.
   clients. *Shipped.*
 - 🖥️ **Per-client display profiles & virtual display lifecycle** — the "VDD manager" concept,
   Linux-native. *Roadmap.*
-- ⚡ **Present-paced capture** — encode-on-present instead of timer polling, with per-stage
-  latency stats. *Roadmap.*
+- ⚡ **Present-paced capture** — KMS capture wakes on real display vblanks instead of a
+  timer: measured ~16ms → ~6-9ms host latency at high res on AMD. On by default
+  (`capture_pacing = auto`); NVIDIA falls back to timer pacing automatically. *Shipped.*
 - 🌈 **HDR pipeline work** — per-frame luminance metadata (MaxCLL/MaxFALL), HLG support.
   *Roadmap.*
 
