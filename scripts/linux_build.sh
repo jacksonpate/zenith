@@ -754,7 +754,9 @@ function run_step_validation() {
 
   # Run appstream validation, etc.
   appstreamcli validate "build/dev.lizardbyte.app.Sunshine.metainfo.xml"
-  appstream-util validate "build/dev.lizardbyte.app.Sunshine.metainfo.xml"
+  # --nonet: minimal containers lack a TLS backend for appstream-util's screenshot
+  # fetch; validate offline like Fedora packaging does.
+  appstream-util --nonet validate "build/dev.lizardbyte.app.Sunshine.metainfo.xml"
   desktop-file-validate "build/dev.lizardbyte.app.Sunshine.desktop"
   if [[ "$appimage_build" == 0 ]]; then
     desktop-file-validate "build/dev.lizardbyte.app.Sunshine.terminal.desktop"
