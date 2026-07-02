@@ -314,6 +314,34 @@ namespace platf {
     }
 
     /**
+     * @brief Zenith: resolve a connector name ("DP-1", "HDMI-A-2") to the global
+     * monitor index assigned during display enumeration.
+     *
+     * Lets `output_name` pin capture to a specific output — e.g. the virtual
+     * display — regardless of how many other monitors happen to be active.
+     * Only monitors that were actively scanning out during enumeration match
+     * (inactive connectors have a zeroed viewport).
+     *
+     * @return The monitor index, or -1 when no active monitor matches.
+     */
+    static int monitor_index_by_connector(const std::string_view &name) {
+      auto index_begin = name.find_last_of('-');
+      if (index_begin == std::string_view::npos) {
+        return -1;
+      }
+      auto index = std::max<std::int64_t>(1, util::from_view(name.substr(index_begin + 1)));
+      auto type = from_view(name.substr(0, index_begin));
+      for (auto &cd : card_descriptors) {
+        for (auto &[_, monitor] : cd.crtc_to_monitor) {
+          if (monitor.index == index && monitor.type == type && monitor.viewport.width > 0) {
+            return (int) monitor.monitor_index;
+          }
+        }
+      }
+      return -1;
+    }
+
+    /**
      * @brief Iterator over DRM planes and their associated properties.
      */
     class plane_it_t: public round_robin_util::it_wrap_t<plane_t::element_type, plane_it_t> {
@@ -876,7 +904,21 @@ namespace platf {
       int init(const std::string &display_name, const ::video::config_t &config) {
         delay = ::video::capture_frame_interval(config);
 
-        int monitor_index = util::from_view(display_name);
+        int monitor_index;
+        if (!display_name.empty() && !std::isdigit((unsigned char) display_name[0])) {
+          // Zenith: connector-name output ("DP-1") — capture follows that
+          // output when it's active, monitor 0 otherwise (so startup probes
+          // and non-VDD apps keep working while the VDD is off).
+          monitor_index = kms::monitor_index_by_connector(display_name);
+          if (monitor_index < 0) {
+            BOOST_LOG(warning) << "Connector ["sv << display_name << "] has no active monitor; falling back to monitor 0"sv;
+            monitor_index = 0;
+          } else {
+            BOOST_LOG(info) << "Capturing connector "sv << display_name << " (monitor "sv << monitor_index << ')';
+          }
+        } else {
+          monitor_index = util::from_view(display_name);
+        }
         int monitor = 0;
 
         fs::path card_dir {"/dev/dri"sv};
