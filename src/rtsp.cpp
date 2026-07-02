@@ -963,6 +963,14 @@ namespace rtsp_stream {
       ss << "a=fmtp:97 surround-params="sv << session.surround_params << std::endl;
     }
 
+    // Zenith: advertise the remote microphone stream so Foundation-compatible
+    // clients (enhanced moonlight-qt/android) offer mic redirection.
+    if (config::audio.mic_enabled) {
+      ss << "m=audio "sv << net::map_port(stream::MIC_STREAM_PORT) << " RTP/AVP 96"sv << std::endl;
+      ss << "a=rtpmap:96 opus/48000/2"sv << std::endl;
+      ss << "a=fmtp:96 minptime=10;useinbandfec=1"sv << std::endl;
+    }
+
     for (int x = 0; x < audio::MAX_STREAM_CONFIG; ++x) {
       auto &stream_config = audio::stream_configs[x];
       std::uint8_t mapping[platf::speaker::MAX_SPEAKERS];
@@ -1026,6 +1034,8 @@ namespace rtsp_stream {
       port = net::map_port(stream::VIDEO_STREAM_PORT);
     } else if (type == "control"sv) {
       port = net::map_port(stream::CONTROL_PORT);
+    } else if (type == "mic"sv && config::audio.mic_enabled) {
+      port = net::map_port(stream::MIC_STREAM_PORT);
     } else {
       cmd_not_found(sock, session, std::move(req));
 
