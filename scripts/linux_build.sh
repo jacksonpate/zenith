@@ -604,9 +604,11 @@ function run_step_deps() {
   # Install the dependencies
   $package_install_command "${dependencies[@]}"
 
-  # reload the environment
-  # shellcheck source=/dev/null
-  source ~/.bashrc
+  # reload the environment (absent in CI containers)
+  if [[ -f ~/.bashrc ]]; then
+    # shellcheck source=/dev/null
+    source ~/.bashrc
+  fi
 
   #set gcc version based on distros
   export CC=gcc-${gcc_version}
