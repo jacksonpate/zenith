@@ -273,6 +273,16 @@ namespace audio {
     }
   }
 
+  int write_mic_data(const std::uint8_t *data, std::size_t size, std::uint16_t seq) {
+    // During an active stream the capture pipeline already holds the audio
+    // context, so this acquire is a cheap refcount bump, not a start/stop.
+    auto ref = get_audio_ctx_ref();
+    if (!ref || !ref->control) {
+      return -1;
+    }
+    return ref->control->write_mic_data(reinterpret_cast<const char *>(data), size, seq);
+  }
+
   audio_ctx_ref_t get_audio_ctx_ref() {
     static auto control_shared {safe::make_shared<audio_ctx_t>(start_audio_control, stop_audio_control)};
     return control_shared.ref();

@@ -261,8 +261,11 @@ endif()
 if(PIPEWIRE_FOUND)
     include_directories(SYSTEM ${PIPEWIRE_INCLUDE_DIRS})
     list(APPEND PLATFORM_LIBRARIES ${PIPEWIRE_LIBRARIES})
+    add_compile_definitions(SUNSHINE_BUILD_PIPEWIRE_MIC)
     list(APPEND PLATFORM_TARGET_FILES
-            "${CMAKE_SOURCE_DIR}/src/platform/linux/pipewire.cpp")
+            "${CMAKE_SOURCE_DIR}/src/platform/linux/pipewire.cpp"
+            "${CMAKE_SOURCE_DIR}/src/platform/linux/mic_write.h"
+            "${CMAKE_SOURCE_DIR}/src/platform/linux/mic_write.cpp")
 endif()
 
 # XDG portal

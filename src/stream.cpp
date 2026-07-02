@@ -10,6 +10,7 @@
 
 // lib includes
 #include <boost/endian/arithmetic.hpp>
+#include <boost/endian/conversion.hpp>
 #include <openssl/err.h>
 
 extern "C" {
@@ -463,6 +464,7 @@ namespace stream {
 
     udp::socket video_sock {io_context};  ///< UDP socket bound for video packet transmission.
     udp::socket audio_sock {io_context};  ///< UDP socket bound for audio packet transmission.
+    udp::socket mic_sock {io_context};  ///< Zenith: UDP socket receiving remote microphone packets (base+12).
 
     control_server_t control_server;  ///< ENet server for GameStream control packets.
   };
@@ -1365,6 +1367,58 @@ namespace stream {
    *
    * @param ctx Native context object used by the operation or callback.
    */
+  // Zenith remote microphone (M1) — wire format shared with Sunshine-Foundation
+  // clients; see docs/design/remote-mic.md. Sequence numbers are little-endian.
+  namespace mic {
+    constexpr std::uint8_t kPacketTypeOpus = 0x61;  // legacy 8-bit packet type
+    constexpr std::uint16_t kPacketTypeExt = 0x5504;  // 16-bit extended packet type
+
+#pragma pack(push, 1)
+
+    struct packet_header_t {  // 12 bytes (legacy, moonlight-common-c mic branch)
+      std::uint8_t flags;
+      std::uint8_t packetType;
+      std::uint16_t sequenceNumber;  // little-endian
+      std::uint32_t timestamp;
+      std::uint32_t ssrc;
+    };
+
+    struct packet_header_ext_t {  // 13 bytes (16-bit type extension)
+      std::uint8_t header;
+      std::uint16_t packetType;
+      std::uint16_t sequenceNumber;  // little-endian
+      std::uint32_t timestamp;
+      std::uint32_t ssrc;
+    };
+
+#pragma pack(pop)
+
+    /**
+     * @brief Parse one mic datagram and forward its Opus payload to the audio backend.
+     */
+    inline void handle_packet(const char *data, std::size_t bytes) {
+      if (bytes > sizeof(packet_header_ext_t)) {
+        auto ext = reinterpret_cast<const packet_header_ext_t *>(data);
+        if (ext->packetType == kPacketTypeExt) {
+          audio::write_mic_data(
+            reinterpret_cast<const std::uint8_t *>(data) + sizeof(packet_header_ext_t),
+            bytes - sizeof(packet_header_ext_t),
+            boost::endian::little_to_native(ext->sequenceNumber));
+          return;
+        }
+      }
+      if (bytes > sizeof(packet_header_t)) {
+        auto hdr = reinterpret_cast<const packet_header_t *>(data);
+        if (hdr->packetType == kPacketTypeOpus) {
+          audio::write_mic_data(
+            reinterpret_cast<const std::uint8_t *>(data) + sizeof(packet_header_t),
+            bytes - sizeof(packet_header_t),
+            boost::endian::little_to_native(hdr->sequenceNumber));
+        }
+      }
+    }
+  }  // namespace mic
+
   void recvThread(broadcast_ctx_t &ctx) {
     std::map<av_session_id_t, message_queue_t> peer_to_video_session;
     std::map<av_session_id_t, message_queue_t> peer_to_audio_session;
@@ -1452,8 +1506,32 @@ namespace stream {
     recv_func_init(video_sock, 0, peer_to_video_session);
     recv_func_init(audio_sock, 1, peer_to_audio_session);
 
+    // Zenith: remote microphone receive chain (own buffer/endpoint; plaintext v1)
+    udp::endpoint mic_peer;
+    std::array<char, 2048> mic_buf;
+    std::function<void(const boost::system::error_code, size_t)> mic_recv_func;
+    mic_recv_func = [&](const boost::system::error_code &ec, size_t bytes) {
+      if (ec == boost::asio::error::operation_aborted || ec == boost::asio::error::bad_descriptor) {
+        return;  // socket closed; do not re-arm
+      }
+      auto fg = util::fail_guard([&]() {
+        ctx.mic_sock.async_receive_from(asio::buffer(mic_buf), mic_peer, 0, mic_recv_func);
+      });
+      if (ec == boost::system::errc::connection_refused || ec == boost::system::errc::connection_reset) {
+        return;  // transient ICMP noise; keep receiving
+      }
+      if (ec || !bytes) {
+        BOOST_LOG(error) << "Couldn't receive data from mic udp socket: "sv << ec.message();
+        return;
+      }
+      mic::handle_packet(mic_buf.data(), bytes);
+    };
+
     video_sock.async_receive_from(asio::buffer(buf[0]), peer, 0, recv_func[0]);
     audio_sock.async_receive_from(asio::buffer(buf[1]), peer, 0, recv_func[1]);
+    if (ctx.mic_sock.is_open()) {
+      ctx.mic_sock.async_receive_from(asio::buffer(mic_buf), mic_peer, 0, mic_recv_func);
+    }
 
     while (!broadcast_shutdown_event->peek()) {
       io.run();
@@ -1958,6 +2036,23 @@ namespace stream {
       return -1;
     }
 
+    // Zenith: remote microphone socket (optional feature; failure is non-fatal)
+    if (config::audio.mic_enabled) {
+      auto mic_port = net::map_port(MIC_STREAM_PORT);
+      ctx.mic_sock.open(protocol, ec);
+      if (!ec) {
+        ctx.mic_sock.bind(udp::endpoint(bind_addr, mic_port), ec);
+      }
+      if (ec) {
+        BOOST_LOG(warning) << "Couldn't bind Microphone server to port ["sv << mic_port << "]: "sv << ec.message() << " — remote mic disabled"sv;
+        if (ctx.mic_sock.is_open()) {
+          ctx.mic_sock.close();
+        }
+      } else {
+        BOOST_LOG(info) << "Zenith remote microphone listening on port "sv << mic_port;
+      }
+    }
+
     ctx.message_queue_queue = std::make_shared<message_queue_queue_t::element_type>(30);
 
     ctx.video_thread = std::thread {videoBroadcastThread, std::ref(ctx.video_sock)};
@@ -1988,6 +2083,9 @@ namespace stream {
     ctx.io_context.stop();
 
     ctx.video_sock.close();
+    if (ctx.mic_sock.is_open()) {
+      ctx.mic_sock.close();
+    }
     ctx.audio_sock.close();
 
     video_packets.reset();

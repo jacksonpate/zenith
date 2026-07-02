@@ -121,6 +121,19 @@ namespace audio {
   audio_ctx_ref_t get_audio_ctx_ref();
 
   /**
+   * @brief Forward one remote-microphone Opus payload to the platform backend.
+   *
+   * Zenith remote microphone (M1): called from the mic UDP receive path with a
+   * decrypted Opus frame. No-op (-1) on platforms without mic redirection.
+   *
+   * @param data Opus frame payload.
+   * @param size Payload size in bytes.
+   * @param seq RTP sequence number (little-endian decoded).
+   * @return Bytes consumed on success, -1 on failure or unsupported.
+   */
+  int write_mic_data(const std::uint8_t *data, std::size_t size, std::uint16_t seq);
+
+  /**
    * @brief Check if the audio sink held by audio context is available.
    * @returns True if available (and can probably be restored), false otherwise.
    * @note Useful for delaying the release of audio context shared pointer (which
