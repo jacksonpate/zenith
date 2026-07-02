@@ -678,6 +678,7 @@ namespace config {
     },
 
     {},  // capture
+    "auto",  // capture_pacing (Zenith): vblank-paced when client fps fits the display refresh
     {},  // encoder
     {},  // adapter_name
     {},  // output_name
@@ -1558,6 +1559,7 @@ namespace config {
     int_f(vars, "vk_rc_mode", video.vk.rc_mode);
 
     string_f(vars, "capture", video.capture);
+    string_f(vars, "capture_pacing", video.capture_pacing);
     string_f(vars, "encoder", video.encoder);
     string_f(vars, "adapter_name", video.adapter_name);
     string_f(vars, "output_name", video.output_name);

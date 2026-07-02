@@ -114,6 +114,7 @@ namespace config {
     } vk;  ///< Vulkan encoder options.
 
     std::string capture;  ///< Capture backend name selected by configuration.
+    std::string capture_pacing;  ///< Zenith: "timer" (default) or "vblank" (present-paced KMS capture).
     std::string encoder;  ///< Encoder backend name selected by configuration.
     std::string adapter_name;  ///< Display adapter name selected in configuration.
     std::string output_name;  ///< Display output name selected in configuration.
