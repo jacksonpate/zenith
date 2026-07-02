@@ -14,6 +14,7 @@
 #include <linux/dma-buf.h>
 #include <sys/capability.h>
 #include <sys/mman.h>
+#include <poll.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
@@ -1419,6 +1420,64 @@ namespace platf {
         return capture_e::ok;
       }
 
+      /**
+       * @brief Zenith M2: configure present-paced capture from the CRTC's current mode.
+       *
+       * When `capture_pacing = vblank`, the capture loop wakes on DRM CRTC sequence
+       * events (i.e. at scanout) instead of a steady-clock timer, removing up to a
+       * frame of sampling staleness. Falls back to timer pacing when the driver
+       * doesn't support the sequence ioctl (returns via wait_vblank()).
+       */
+      void init_pacing(const ::video::config_t &config) {
+        vblank_pacing = false;
+        if (config::video.capture_pacing != "vblank"sv) {
+          return;
+        }
+        std::uint32_t refresh = 60;
+        if (auto crtc = drmModeGetCrtc(card.fd.el, crtc_id)) {
+          if (crtc->mode_valid && crtc->mode.vrefresh > 0) {
+            refresh = crtc->mode.vrefresh;
+          }
+          drmModeFreeCrtc(crtc);
+        }
+        std::uint32_t fps = config.framerate > 0 ? (std::uint32_t) config.framerate : 60;
+        vblank_interval = std::max<std::uint32_t>(1, (refresh + fps / 2) / fps);
+        vblank_pacing = true;
+        BOOST_LOG(info) << "Present-paced capture: display "sv << refresh << "Hz, client "sv << fps
+                        << "fps -> waking every "sv << vblank_interval << " vblank(s)"sv;
+      }
+
+      /**
+       * @brief Block until the next targeted CRTC vblank.
+       * @return false when sequence events are unsupported/failed (caller reverts to timer).
+       */
+      bool wait_vblank() {
+        std::uint64_t queued = 0;
+        bool fired = false;
+        if (drmCrtcQueueSequence(card.fd.el, crtc_id, DRM_CRTC_SEQUENCE_RELATIVE, vblank_interval, &queued, (std::uint64_t) (std::uintptr_t) &fired) != 0) {
+          return false;
+        }
+        drmEventContext ev {};
+        ev.version = 4;  // sequence_handler requires context version 4
+        ev.sequence_handler = [](int, std::uint64_t, std::uint64_t, std::uint64_t user_data) {
+          *(bool *) (std::uintptr_t) user_data = true;
+        };
+        while (!fired) {
+          pollfd pfd {card.fd.el, POLLIN, 0};
+          int rc = poll(&pfd, 1, 1000);
+          if (rc <= 0) {
+            return false;  // timeout or error: something is wrong with event delivery
+          }
+          if (drmHandleEvent(card.fd.el, &ev) != 0) {
+            return false;
+          }
+        }
+        return true;
+      }
+
+      bool vblank_pacing = false;  ///< Zenith: wake on CRTC sequence events instead of a timer.
+      std::uint32_t vblank_interval = 1;  ///< Zenith: vblanks per captured frame (refresh / client fps).
+
       mem_type_e mem_type;  ///< Mem type.
 
       std::chrono::nanoseconds delay;  ///< Delay before the timer task becomes eligible to run.
@@ -1499,17 +1558,27 @@ namespace platf {
         sleep_overshoot_logger.reset();
 
         while (true) {
-          auto now = std::chrono::steady_clock::now();
-
-          if (next_frame > now) {
-            std::this_thread::sleep_for(next_frame - now);
-            sleep_overshoot_logger.first_point(next_frame);
-            sleep_overshoot_logger.second_point_now_and_log();
+          if (vblank_pacing) {
+            if (wait_vblank()) {
+              next_frame = std::chrono::steady_clock::now() + delay;  // keep timer reference sane for fallback
+            } else {
+              vblank_pacing = false;
+              BOOST_LOG(warning) << "CRTC sequence events unavailable; reverting to timer-paced capture"sv;
+            }
           }
+          if (!vblank_pacing) {
+            auto now = std::chrono::steady_clock::now();
 
-          next_frame += delay;
-          if (next_frame < now) {  // some major slowdown happened; we couldn't keep up
-            next_frame = now + delay;
+            if (next_frame > now) {
+              std::this_thread::sleep_for(next_frame - now);
+              sleep_overshoot_logger.first_point(next_frame);
+              sleep_overshoot_logger.second_point_now_and_log();
+            }
+
+            next_frame += delay;
+            if (next_frame < now) {  // some major slowdown happened; we couldn't keep up
+              next_frame = now + delay;
+            }
           }
 
           std::shared_ptr<platf::img_t> img_out;
@@ -1776,17 +1845,27 @@ namespace platf {
         sleep_overshoot_logger.reset();
 
         while (true) {
-          auto now = std::chrono::steady_clock::now();
-
-          if (next_frame > now) {
-            std::this_thread::sleep_for(next_frame - now);
-            sleep_overshoot_logger.first_point(next_frame);
-            sleep_overshoot_logger.second_point_now_and_log();
+          if (vblank_pacing) {
+            if (wait_vblank()) {
+              next_frame = std::chrono::steady_clock::now() + delay;  // keep timer reference sane for fallback
+            } else {
+              vblank_pacing = false;
+              BOOST_LOG(warning) << "CRTC sequence events unavailable; reverting to timer-paced capture"sv;
+            }
           }
+          if (!vblank_pacing) {
+            auto now = std::chrono::steady_clock::now();
 
-          next_frame += delay;
-          if (next_frame < now) {  // some major slowdown happened; we couldn't keep up
-            next_frame = now + delay;
+            if (next_frame > now) {
+              std::this_thread::sleep_for(next_frame - now);
+              sleep_overshoot_logger.first_point(next_frame);
+              sleep_overshoot_logger.second_point_now_and_log();
+            }
+
+            next_frame += delay;
+            if (next_frame < now) {  // some major slowdown happened; we couldn't keep up
+              next_frame = now + delay;
+            }
           }
 
           std::shared_ptr<platf::img_t> img_out;
@@ -1890,6 +1969,8 @@ namespace platf {
           return -1;
         }
 #endif
+
+        init_pacing(config);
 
         return 0;
       }
