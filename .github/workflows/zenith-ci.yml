@@ -34,25 +34,25 @@ jobs:
             runner: ubuntu-24.04
             container: ""
             sudo_flag: ""
-            package: Sunshine.deb
+            package: Zenith.deb
             artifact: zenith-ubuntu-24.04-amd64.deb
           - name: Debian 13 trixie (deb, x86_64)
             runner: ubuntu-latest
             container: debian:13
             sudo_flag: "--sudo-off"
-            package: Sunshine.deb
+            package: Zenith.deb
             artifact: zenith-debian-13-amd64.deb
           - name: Fedora 42 (rpm, x86_64)
             runner: ubuntu-latest
             container: fedora:42
             sudo_flag: "--sudo-off"
-            package: Sunshine.rpm
+            package: Zenith.rpm
             artifact: zenith-fedora-42-x86_64.rpm
           - name: Fedora 42 (rpm, aarch64 / Asahi)
             runner: ubuntu-24.04-arm
             container: fedora:42
             sudo_flag: "--sudo-off"
-            package: Sunshine.rpm
+            package: Zenith.rpm
             artifact: zenith-fedora-42-aarch64.rpm
     steps:
       - name: Install git (container jobs)
