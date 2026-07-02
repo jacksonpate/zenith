@@ -21,9 +21,20 @@ reboot always falls back to the user's saved layout. The saved-layout snapshot
 for restore lives in $XDG_RUNTIME_DIR/zenith-display-state.json.
 """
 
+import datetime
 import json
 import os
 import sys
+import traceback
+
+# Prep-commands inherit Zenith's service environment, which may lack the
+# session-bus address even when the bus itself is up. Point GDBus at the
+# standard user bus path explicitly so Mutter is always reachable.
+if "XDG_RUNTIME_DIR" in os.environ:
+    os.environ.setdefault(
+        "DBUS_SESSION_BUS_ADDRESS",
+        f"unix:path={os.environ['XDG_RUNTIME_DIR']}/bus",
+    )
 
 import gi
 
@@ -280,4 +291,22 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception:
+        # Zenith only records the exit code of prep-commands; keep the real
+        # reason somewhere durable.
+        tb = traceback.format_exc()
+        print(tb, file=sys.stderr)
+        try:
+            logfile = os.path.join(
+                os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zenith-display.log"
+            )
+            with open(logfile, "a") as f:
+                f.write(f"--- {datetime.datetime.now().isoformat()} "
+                        f"argv={sys.argv[1:]} ---\n{tb}\n")
+        except OSError:
+            pass
+        sys.exit(1)
