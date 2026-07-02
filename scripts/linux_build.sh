@@ -879,7 +879,9 @@ elif grep -q '^ID=fedora$' /etc/os-release && grep -q '^VERSION_ID=44$' /etc/os-
   version="44"
   package_update_command="${sudo_cmd} dnf update -y"
   package_install_command="${sudo_cmd} dnf install -y"
-  gcc_version="14"
+  # F44 default gcc is 16 (too new for nvcc) and ships no gcc14 compat package;
+  # gcc15/gcc15-c++ exist and nvcc 13.1 accepts gcc 15.
+  gcc_version="15"
   nvm_node=0
 elif grep -q '^ID=fedora$' /etc/os-release && grep -q '^VERSION_ID=45$' /etc/os-release; then
   distro="fedora"
