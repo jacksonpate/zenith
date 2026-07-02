@@ -139,6 +139,10 @@ endif()
 
 # This should automatically figure out dependencies on packages
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+# Zenith replaces the upstream sunshine package on the same file paths
+set(CPACK_DEBIAN_PACKAGE_CONFLICTS "sunshine")
+set(CPACK_DEBIAN_PACKAGE_REPLACES "sunshine")
+set(CPACK_DEBIAN_PACKAGE_PROVIDES "sunshine")
 set(CPACK_RPM_PACKAGE_AUTOREQ ON)
 
 # application icon
