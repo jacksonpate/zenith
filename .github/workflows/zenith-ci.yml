@@ -74,9 +74,9 @@ jobs:
           ./scripts/linux_build.sh \
             ${{ matrix.sudo_flag }} \
             --skip-cuda \
-            --publisher-name "jacksonpate" \
-            --publisher-website "https://github.com/jacksonpate/zenith" \
-            --publisher-issue-url "https://github.com/jacksonpate/zenith/issues"
+            --publisher-name="jacksonpate" \
+            --publisher-website="https://github.com/jacksonpate/zenith" \
+            --publisher-issue-url="https://github.com/jacksonpate/zenith/issues"
 
       - name: Collect package
         shell: bash
