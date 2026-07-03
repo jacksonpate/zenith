@@ -15,8 +15,8 @@
 	url = https://github.com/Dav1dde/glad.git
 [submodule "third-party/inputtino"]
 	path = third-party/inputtino
-	url = https://github.com/games-on-whales/inputtino.git
-	branch = stable
+	url = https://github.com/jacksonpate/inputtino.git
+	branch = zenith/pen-lift
 [submodule "third-party/libdisplaydevice"]
 	path = third-party/libdisplaydevice
 	url = https://github.com/LizardByte/libdisplaydevice.git

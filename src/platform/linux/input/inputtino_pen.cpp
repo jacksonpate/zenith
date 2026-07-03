@@ -23,6 +23,18 @@ namespace platf::pen {
    */
   void update(client_input_raw_t *raw, const touch_port_t &touch_port, const pen_input_t &pen) {
     if (raw->pen) {
+      // The pen has left hover range (or the touch was cancelled): take the tool out of
+      // proximity instead of reporting an eternal hover. Leaving the tool in-range forever
+      // makes libinput fall back to timer-based forced proximity-outs, which shear strokes
+      // mid-contact and can wedge the compositor's tablet state (pen taps go dead session-wide).
+      // These events also carry unreliable coordinates, so don't move the tool either.
+      if (pen.eventType == LI_TOUCH_EVENT_HOVER_LEAVE ||
+          pen.eventType == LI_TOUCH_EVENT_CANCEL ||
+          pen.eventType == LI_TOUCH_EVENT_CANCEL_ALL) {
+        (*raw->pen).lift_tool();
+        return;
+      }
+
       // First set the buttons
       (*raw->pen).set_btn(inputtino::PenTablet::PRIMARY, pen.penButtons & LI_PEN_BUTTON_PRIMARY);
       (*raw->pen).set_btn(inputtino::PenTablet::SECONDARY, pen.penButtons & LI_PEN_BUTTON_SECONDARY);
