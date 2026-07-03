@@ -313,33 +313,6 @@ namespace platf {
       return DRM_MODE_CONNECTOR_Unknown;
     }
 
-    /**
-     * @brief Zenith: resolve a connector name ("DP-1", "HDMI-A-2") to the global
-     * monitor index assigned during display enumeration.
-     *
-     * Lets `output_name` pin capture to a specific output — e.g. the virtual
-     * display — regardless of how many other monitors happen to be active.
-     * Only monitors that were actively scanning out during enumeration match
-     * (inactive connectors have a zeroed viewport).
-     *
-     * @return The monitor index, or -1 when no active monitor matches.
-     */
-    static int monitor_index_by_connector(const std::string_view &name) {
-      auto index_begin = name.find_last_of('-');
-      if (index_begin == std::string_view::npos) {
-        return -1;
-      }
-      auto index = std::max<std::int64_t>(1, util::from_view(name.substr(index_begin + 1)));
-      auto type = from_view(name.substr(0, index_begin));
-      for (auto &cd : card_descriptors) {
-        for (auto &[_, monitor] : cd.crtc_to_monitor) {
-          if (monitor.index == index && monitor.type == type && monitor.viewport.width > 0) {
-            return (int) monitor.monitor_index;
-          }
-        }
-      }
-      return -1;
-    }
 
     /**
      * @brief Iterator over DRM planes and their associated properties.
@@ -904,21 +877,19 @@ namespace platf {
       int init(const std::string &display_name, const ::video::config_t &config) {
         delay = ::video::capture_frame_interval(config);
 
-        int monitor_index;
+        // Zenith: connector-name output ("DP-1") pins capture to that output.
+        // Resolved against the live plane walk below, never cached enumeration
+        // state — indexes from a previous session's monitor layout are stale.
+        std::uint32_t want_type = 0;
+        std::int64_t want_index = 0;
         if (!display_name.empty() && !std::isdigit((unsigned char) display_name[0])) {
-          // Zenith: connector-name output ("DP-1") — capture follows that
-          // output when it's active, monitor 0 otherwise (so startup probes
-          // and non-VDD apps keep working while the VDD is off).
-          monitor_index = kms::monitor_index_by_connector(display_name);
-          if (monitor_index < 0) {
-            BOOST_LOG(warning) << "Connector ["sv << display_name << "] has no active monitor; falling back to monitor 0"sv;
-            monitor_index = 0;
-          } else {
-            BOOST_LOG(info) << "Capturing connector "sv << display_name << " (monitor "sv << monitor_index << ')';
+          auto sep = display_name.find_last_of('-');
+          if (sep != std::string::npos) {
+            want_index = std::max<std::int64_t>(1, util::from_view(std::string_view {display_name}.substr(sep + 1)));
+            want_type = kms::from_view(std::string_view {display_name}.substr(0, sep));
           }
-        } else {
-          monitor_index = util::from_view(display_name);
         }
+        int monitor_index = want_type ? -1 : util::from_view(display_name);
         int monitor = 0;
 
         fs::path card_dir {"/dev/dri"sv};
@@ -952,6 +923,12 @@ namespace platf {
             continue;
           }
 
+          kms::conn_type_count_t conn_type_count;
+          std::map<std::uint32_t, kms::monitor_t> crtc_map;
+          if (want_type) {
+            crtc_map = kms::map_crtc_to_monitor(card.monitors(conn_type_count));
+          }
+
           auto end = std::end(card);
           for (auto plane = std::begin(card); plane != end; ++plane) {
             // Skip unused planes
@@ -963,7 +940,13 @@ namespace platf {
               continue;
             }
 
-            if (monitor != monitor_index) {
+            if (want_type) {
+              auto it = crtc_map.find(plane->crtc_id);
+              if (it == std::end(crtc_map) || it->second.type != want_type || it->second.index != (std::uint32_t) want_index) {
+                continue;
+              }
+              BOOST_LOG(info) << "Capturing connector "sv << display_name;
+            } else if (monitor != monitor_index) {
               ++monitor;
               continue;
             }
@@ -1084,6 +1067,12 @@ namespace platf {
           }
         }
 
+        if (want_type) {
+          // The named connector isn't scanning out right now (VDD off);
+          // fall back to monitor 0 so probes and non-VDD apps keep working.
+          BOOST_LOG(warning) << "Connector ["sv << display_name << "] has no active monitor; falling back to monitor 0"sv;
+          return init("0", config);
+        }
         BOOST_LOG(error) << "Couldn't find monitor ["sv << monitor_index << ']';
         return -1;
 
