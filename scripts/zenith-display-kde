@@ -37,7 +37,7 @@ wait_scanout() {
 
 case "$1" in
   headless)
-    kscreen-doctor "output.$VDD.enable" "output.$VDD.priority.1" || exit 1
+    kscreen-doctor "output.$VDD.enable" "output.$VDD.priority.1" "output.$VDD.scale.${ZENITH_VDD_SCALE:-1.5}" || exit 1
     try_mode
     kscreen-doctor "output.$PANEL.disable" "output.$CONSOLE.disable"
     wait_scanout
