@@ -201,6 +201,31 @@ def apply(proxy, serial, logical_entries, dry_run, method=APPLY_TEMPORARY):
     log(f"applied: {summary}")
 
 
+def wait_for_scanout(connector, timeout=3.0):
+    """Block until the connector reports enabled scanout (plus a short settle).
+
+    Prep-commands are synchronous: Zenith enumerates capture displays right
+    after we return, and a VDD that hasn't finished its modeset yet would be
+    missing from that enumeration.
+    """
+    import glob
+    import time
+    paths = glob.glob(f"/sys/class/drm/card*-{connector}/enabled")
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        for p in paths:
+            try:
+                if open(p).read().strip() == "enabled":
+                    time.sleep(0.5)  # let the compositor commit a first frame
+                    log(f"{connector} scanout is live")
+                    return True
+            except OSError:
+                pass
+        time.sleep(0.1)
+    log(f"warning: {connector} did not report enabled within {timeout}s")
+    return False
+
+
 def client_request():
     w = int(os.environ.get("SUNSHINE_CLIENT_WIDTH", "1920"))
     h = int(os.environ.get("SUNSHINE_CLIENT_HEIGHT", "1080"))
@@ -279,6 +304,8 @@ def main():
         if not entries:
             log("no real monitors active; dual degrades to headless")
             apply(proxy, serial, [vdd_entry], dry_run)
+            if not dry_run:
+                wait_for_scanout(VDD)
             return 0
         right_edge = 0
         for e in entries:
@@ -293,6 +320,8 @@ def main():
         vdd_entry.update({"x": right_edge, "primary": False})
         entries.append(vdd_entry)
     apply(proxy, serial, entries, dry_run)
+    if not dry_run:
+        wait_for_scanout(VDD)
     return 0
 
 

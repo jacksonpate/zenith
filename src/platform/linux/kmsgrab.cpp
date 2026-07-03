@@ -313,6 +313,58 @@ namespace platf {
       return DRM_MODE_CONNECTOR_Unknown;
     }
 
+    /**
+     * @brief Zenith: kernel-style name for a connector type (inverse of from_view).
+     *
+     * Matches the names the kernel and Wayland compositors use ("DP", "HDMI-A",
+     * "eDP", ...) so `<type>-<index>` equals the connector name in /sys/class/drm
+     * and in desktop display settings.
+     */
+    static std::string_view connector_type_name(std::uint32_t type) {
+      switch (type) {
+        case DRM_MODE_CONNECTOR_VGA:
+          return "VGA"sv;
+        case DRM_MODE_CONNECTOR_DVII:
+          return "DVI-I"sv;
+        case DRM_MODE_CONNECTOR_DVID:
+          return "DVI-D"sv;
+        case DRM_MODE_CONNECTOR_DVIA:
+          return "DVI-A"sv;
+        case DRM_MODE_CONNECTOR_Composite:
+          return "Composite"sv;
+        case DRM_MODE_CONNECTOR_SVIDEO:
+          return "SVIDEO"sv;
+        case DRM_MODE_CONNECTOR_LVDS:
+          return "LVDS"sv;
+        case DRM_MODE_CONNECTOR_Component:
+          return "Component"sv;
+        case DRM_MODE_CONNECTOR_9PinDIN:
+          return "DIN"sv;
+        case DRM_MODE_CONNECTOR_DisplayPort:
+          return "DP"sv;
+        case DRM_MODE_CONNECTOR_HDMIA:
+          return "HDMI-A"sv;
+        case DRM_MODE_CONNECTOR_HDMIB:
+          return "HDMI-B"sv;
+        case DRM_MODE_CONNECTOR_TV:
+          return "TV"sv;
+        case DRM_MODE_CONNECTOR_eDP:
+          return "eDP"sv;
+        case DRM_MODE_CONNECTOR_VIRTUAL:
+          return "Virtual"sv;
+        case DRM_MODE_CONNECTOR_DSI:
+          return "DSI"sv;
+        case DRM_MODE_CONNECTOR_DPI:
+          return "DPI"sv;
+        case DRM_MODE_CONNECTOR_WRITEBACK:
+          return "Writeback"sv;
+        case DRM_MODE_CONNECTOR_SPI:
+          return "SPI"sv;
+        default:
+          return {};
+      }
+    }
+
 
     /**
      * @brief Iterator over DRM planes and their associated properties.
@@ -2208,6 +2260,18 @@ namespace platf {
         }
 
         auto it = crtc_to_monitor.find(plane->crtc_id);
+
+        // Zenith: name displays by connector ("DP-1") like the Wayland backend
+        // does, so `output_name = DP-1` matches during display refresh and
+        // capture can follow a specific output (e.g. the virtual display).
+        std::string display_name = std::to_string(count);
+        if (it != std::end(crtc_to_monitor)) {
+          auto type_name = kms::connector_type_name(it->second.type);
+          if (!type_name.empty()) {
+            display_name = std::string {type_name} + '-' + std::to_string(it->second.index);
+          }
+        }
+
         if (it != std::end(crtc_to_monitor)) {
           it->second.viewport = platf::touch_port_t {
             (int) crtc->x,
@@ -2223,7 +2287,8 @@ namespace platf {
 
         kms::print(plane.get(), fb.get(), crtc.get());
 
-        display_names.emplace_back(std::to_string(count++));
+        display_names.emplace_back(std::move(display_name));
+        ++count;
       }
 
       cds.emplace_back(kms::card_descriptor_t {
