@@ -46,13 +46,12 @@ STATE_FILE = os.path.join(
     os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "zenith-display-state.json"
 )
 # ApplyMonitorsConfig method: 1 = temporary (RAM only), 2 = persistent.
-# Sessions (headless/dual) apply temporary so a crash or reboot always falls
-# back to the user's saved layout. Restore applies PERSISTENT: Mutter snapshots
-# monitors.xml on its own while the VDD is active, and a temporary restore
-# loses to that stale snapshot on the next connector event — the real layout
-# must become the durable one.
+# ALWAYS use temporary. Persistent (method 2) makes Mutter fire GNOME's
+# "Keep these display settings?" confirm-and-revert dialog — fatal for a remote
+# headless user who can't click Keep. Temporary never prompts. VDD teardown on
+# restore is guaranteed by clearing the stale monitors.xml snapshot instead
+# (see restore below), not by persisting.
 APPLY_TEMPORARY = 1
-APPLY_PERSISTENT = 2
 
 
 def log(msg):
@@ -188,12 +187,12 @@ def build_logical(entries):
     return lms
 
 
-def apply(proxy, serial, logical_entries, dry_run, method=APPLY_TEMPORARY):
+def apply(proxy, serial, logical_entries, dry_run):
     lms = build_logical(logical_entries)
     if dry_run:
-        log(f"dry-run; would apply (method {method}): {json.dumps(logical_entries, indent=2)}")
+        log(f"dry-run; would apply: {json.dumps(logical_entries, indent=2)}")
         return
-    params = GLib.Variant("(uua(iiduba(ssa{sv}))a{sv})", (serial, method, lms, {}))
+    params = GLib.Variant("(uua(iiduba(ssa{sv}))a{sv})", (serial, APPLY_TEMPORARY, lms, {}))
     proxy.call_sync("ApplyMonitorsConfig", params, Gio.DBusCallFlags.NONE, -1, None)
     summary = [
         (o["connector"], o["mode_id"]) for e in logical_entries for o in e["monitors"]
@@ -224,6 +223,40 @@ def wait_for_scanout(connector, timeout=3.0):
         time.sleep(0.1)
     log(f"warning: {connector} did not report enabled within {timeout}s")
     return False
+
+
+def purge_vdd_from_saved_config():
+    """Remove any VDD logicalmonitor from monitors.xml so Mutter can't resurrect
+    the virtual display on the next hotplug/MonitorsChanged event.
+
+    While the VDD is active, GNOME may snapshot the current layout (VDD included)
+    into monitors.xml on its own. A temporary restore leaves that stale snapshot
+    behind, and Mutter reapplies it later — re-enabling the VDD after the session
+    ended. Editing the file directly (no D-Bus) avoids the persistent-apply
+    confirm dialog entirely. Xml-namespace-free format, so string edits are safe.
+    """
+    import xml.etree.ElementTree as ET
+    path = os.path.expanduser("~/.config/monitors.xml")
+    if not os.path.exists(path):
+        return
+    try:
+        tree = ET.parse(path)
+    except ET.ParseError:
+        return
+    root = tree.getroot()
+    changed = False
+    for config in list(root):
+        for lm in list(config):
+            if lm.tag != "logicalmonitor":
+                continue
+            connectors = [c.text for m in lm.findall("monitor")
+                          for c in m.findall("monitorspec/connector")]
+            if VDD in connectors:
+                config.remove(lm)
+                changed = True
+    if changed:
+        tree.write(path, encoding="unicode", xml_declaration=True)
+        log(f"purged {VDD} from {path}")
 
 
 def client_request():
@@ -277,7 +310,9 @@ def main():
         if not entries:
             log("nothing to restore to; refusing to apply an empty layout")
             return 1
-        apply(proxy, serial, entries, dry_run, method=APPLY_PERSISTENT)
+        apply(proxy, serial, entries, dry_run)
+        if not dry_run:
+            purge_vdd_from_saved_config()
         return 0
 
     w, h, fps = client_request()
