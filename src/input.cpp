@@ -247,6 +247,8 @@ namespace input {
     bool left_alt_pressed = false;  ///< Tracks whether the left Alt key is currently pressed.
     bool right_alt_pressed = false;  ///< Tracks whether the right Alt key is currently pressed.
 
+    std::chrono::steady_clock::time_point last_pen_activity {};  ///< Last time a pen packet arrived; while recent, the pen owns the pointer and absolute mouse moves are dropped.
+
     std::vector<gamepad_t> gamepads;  ///< Virtual gamepad slots tracked for the stream.
     std::unique_ptr<platf::client_input_t> client_context;  ///< Client context.
 
@@ -664,6 +666,15 @@ namespace input {
    */
   void passthrough(std::shared_ptr<input_t> &input, PNV_ABS_MOUSE_MOVE_PACKET packet) {
     if (!config::input.mouse) {
+      return;
+    }
+
+    // Pen owns the pointer: some clients (Moonlight iOS with Apple Pencil) double-report
+    // the pen as absolute mouse moves — including a stray 0,0 when the pencil leaves hover,
+    // which slams the host cursor into the top-left hot corner. While pen packets are
+    // recent, drop absolute mouse motion entirely.
+    if (input->last_pen_activity != std::chrono::steady_clock::time_point {} &&
+        std::chrono::steady_clock::now() - input->last_pen_activity < 1s) {
       return;
     }
 
@@ -1172,6 +1183,8 @@ namespace input {
     if (!config::input.mouse) {
       return;
     }
+
+    input->last_pen_activity = std::chrono::steady_clock::now();
 
     // Convert the client normalized coordinates to touchport coordinates
     auto coords = client_to_touchport(input, {from_clamped_netfloat(packet->x, 0.0f, 1.0f) * 65535.f, from_clamped_netfloat(packet->y, 0.0f, 1.0f) * 65535.f}, {65535.f, 65535.f});
