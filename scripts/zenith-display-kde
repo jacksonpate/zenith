@@ -1,0 +1,58 @@
+#!/bin/bash
+# zenith-display-kde — KDE/kscreen port of zenith-display for Plasma sessions.
+# Modes: headless | dual | restore. Reads SUNSHINE_CLIENT_WIDTH/HEIGHT/FPS.
+# Kept intentionally simple vs the Mutter version: restore = laptop-panel-only.
+
+export WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}
+VDD=DP-1
+PANEL=eDP-1
+CONSOLE=Virtual-1
+
+W=${SUNSHINE_CLIENT_WIDTH:-2420}
+H=${SUNSHINE_CLIENT_HEIGHT:-1668}
+FPS=${SUNSHINE_CLIENT_FPS:-120}
+
+mode_arg="output.$VDD.mode.${W}x${H}@${FPS}"
+# fall back through common rates if the exact one isn't in the EDID
+try_mode() {
+  for r in "$FPS" 120 60; do
+    if kscreen-doctor "output.$VDD.mode.${W}x${H}@${r}" 2>/dev/null; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# wait for the VDD's CRTC to actually light before returning, so the
+# capture enumeration that follows the prep-cmd can't race past it
+wait_scanout() {
+  for i in $(seq 1 50); do
+    for e in /sys/class/drm/card*-"$VDD"/enabled; do
+      [ "$(cat "$e" 2>/dev/null)" = "enabled" ] && return 0
+    done
+    sleep 0.1
+  done
+  return 1
+}
+
+case "$1" in
+  headless)
+    kscreen-doctor "output.$VDD.enable" "output.$VDD.priority.1" || exit 1
+    try_mode
+    kscreen-doctor "output.$PANEL.disable" "output.$CONSOLE.disable"
+    wait_scanout
+    ;;
+  dual)
+    kscreen-doctor "output.$VDD.enable" "output.$PANEL.enable" "output.$PANEL.priority.1" "output.$VDD.priority.2" "output.$CONSOLE.disable" || exit 1
+    try_mode
+    wait_scanout
+    ;;
+  restore)
+    kscreen-doctor "output.$PANEL.enable" "output.$PANEL.priority.1"
+    kscreen-doctor "output.$VDD.disable" "output.$CONSOLE.disable"
+    ;;
+  *)
+    echo "usage: $0 headless|dual|restore" >&2
+    exit 2
+    ;;
+esac

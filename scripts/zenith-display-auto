@@ -1,0 +1,10 @@
+#!/bin/bash
+# zenith-display-auto — session-aware dispatcher for Zenith prep-cmds.
+# Routes to the Mutter implementation under GNOME and the kscreen one under KDE,
+# so the same apps.json works in either session.
+
+if pgrep -x kwin_wayland >/dev/null 2>&1; then
+  exec /usr/local/bin/zenith-display-kde "$@"
+else
+  exec /usr/local/bin/zenith-display "$@"
+fi
