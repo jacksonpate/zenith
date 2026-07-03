@@ -259,6 +259,28 @@ def purge_vdd_from_saved_config():
         log(f"purged {VDD} from {path}")
 
 
+def connected_real_monitors(monitors):
+    """Layout entries for every connected non-VDD monitor at its preferred mode.
+
+    Used when the physical monitors are currently disabled (a headless server
+    idles them off) but dual/restore needs them lit — so dual always joins the
+    real displays with the VDD instead of collapsing to VDD-only.
+    """
+    entries = []
+    x = 0
+    for mon in monitors:
+        conn = monitor_connector(mon)
+        if conn == VDD:
+            continue
+        mode, _ = pick_mode(monitor_modes(mon), 10**6, 10**6, 60)
+        entries.append({
+            "x": x, "y": 0, "scale": 1.0, "transform": 0, "primary": x == 0,
+            "monitors": [{"connector": conn, "mode_id": mode[0]}],
+        })
+        x += mode[1]
+    return entries
+
+
 def client_request():
     w = int(os.environ.get("SUNSHINE_CLIENT_WIDTH", "1920"))
     h = int(os.environ.get("SUNSHINE_CLIENT_HEIGHT", "1080"))
@@ -289,24 +311,8 @@ def main():
             if not dry_run:
                 os.unlink(STATE_FILE)
         else:
-            # No snapshot: bring every non-VDD monitor up at its preferred mode.
-            x = 0
-            for mon in monitors:
-                conn = monitor_connector(mon)
-                if conn == VDD:
-                    continue
-                mode, _ = pick_mode(monitor_modes(mon), 10**6, 10**6, 60)
-                entries.append(
-                    {
-                        "x": x,
-                        "y": 0,
-                        "scale": 1.0,
-                        "transform": 0,
-                        "primary": x == 0,
-                        "monitors": [{"connector": conn, "mode_id": mode[0]}],
-                    }
-                )
-                x += mode[1]
+            # No snapshot: bring every connected non-VDD monitor up at preferred mode.
+            entries = connected_real_monitors(monitors)
         if not entries:
             log("nothing to restore to; refusing to apply an empty layout")
             return 1
@@ -337,11 +343,18 @@ def main():
     else:  # dual
         entries = strip_vdd(current_layout(monitors, logical))
         if not entries:
-            log("no real monitors active; dual degrades to headless")
-            apply(proxy, serial, [vdd_entry], dry_run)
-            if not dry_run:
-                wait_for_scanout(VDD)
-            return 0
+            # Physical monitors are off (headless server); light the connected
+            # ones so dual joins them with the VDD instead of collapsing to
+            # VDD-only. Truly display-less hosts yield [] and dual == headless.
+            entries = connected_real_monitors(monitors)
+            if entries:
+                log(f"real monitors were idle; bringing up {[o['connector'] for e in entries for o in e['monitors']]}")
+            else:
+                log("no physical monitors connected; dual is VDD-only")
+                apply(proxy, serial, [vdd_entry], dry_run)
+                if not dry_run:
+                    wait_for_scanout(VDD)
+                return 0
         right_edge = 0
         for e in entries:
             width = 0
