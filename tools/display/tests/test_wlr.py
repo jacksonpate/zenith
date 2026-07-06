@@ -80,7 +80,7 @@ def test_sway_headless_uses_swaymsg_custom_mode(fixture_text):
     backend.apply_headless("HEADLESS-2", Mode(2420, 1668, 60))
     joined = [" ".join(t) for t in backend.runner.trace]
     assert any(
-        "swaymsg output HEADLESS-2 enable mode --custom 2420x1668@60Hz position 0 0" in j
+        "swaymsg -- output HEADLESS-2 enable mode --custom 2420x1668@60Hz position 0 0" in j
         for j in joined
     )
     assert any("swaymsg output HEADLESS-1 disable" in j for j in joined)

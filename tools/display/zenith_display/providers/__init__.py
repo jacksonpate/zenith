@@ -80,12 +80,17 @@ def chain_for(env) -> List[VddProvider]:
 
 
 def choose(env, runner: Runner, bootstrap: bool = True):
-    """Walk the chain; returns (provider, report) where report lists decisions."""
+    """Walk the chain; returns (provider, report) where report lists decisions.
+
+    ``ensure()`` (module loads, package installs) only fires while no
+    earlier provider has already qualified — bootstrap is a last resort,
+    not a side effect of reporting.
+    """
     report = []
     selected: Optional[VddProvider] = None
     for provider in chain_for(env):
         ok, reason = provider.probe(env)
-        if not ok and bootstrap and provider.ensure(env, runner):
+        if not ok and bootstrap and selected is None and provider.ensure(env, runner):
             ok, reason = provider.probe(env)
         report.append({"provider": provider.name, "available": ok, "reason": reason})
         if ok and selected is None:

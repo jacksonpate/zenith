@@ -106,8 +106,9 @@ class WlrBackend(LayoutBackend):
 
     def _enable(self, name: str, mode: Mode, x: int, y: int = 0) -> None:
         if self._sway():
+            # `--` stops swaymsg's own getopt from eating the command's --custom.
             self.runner.run(
-                ["swaymsg", "output", name, "enable", "mode", "--custom",
+                ["swaymsg", "--", "output", name, "enable", "mode", "--custom",
                  f"{mode.width}x{mode.height}@{mode.refresh}Hz", "position", str(x), str(y)],
                 timeout=15, check=True,
             )
