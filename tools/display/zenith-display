@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""Entry point for the Zenith display autopilot.
+
+Works from the source tree and from an installed location: the package is
+looked up next to this script first, then in the packaged libdir.
+"""
+
+import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(os.path.realpath(__file__)))
+for candidate in (_HERE, "/usr/lib/zenith", "/usr/lib64/zenith",
+                  "/usr/local/lib/zenith", "/usr/local/lib64/zenith"):
+    if os.path.isdir(os.path.join(candidate, "zenith_display")):
+        sys.path.insert(0, candidate)
+        break
+
+from zenith_display.cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main())

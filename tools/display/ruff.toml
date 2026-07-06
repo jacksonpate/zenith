@@ -1,0 +1,8 @@
+line-length = 110
+target-version = "py39"
+
+[lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[lint.per-file-ignores]
+"tests/*" = ["E402"]  # sys.path bootstrap must precede imports

@@ -3,6 +3,14 @@
 install(DIRECTORY "${SUNSHINE_SOURCE_ASSETS_DIR}/linux/assets/"
         DESTINATION "${SUNSHINE_ASSETS_DIR}")
 
+# Zenith display autopilot: plug-and-play Headless/Dual Display support.
+# The default apps.json references `zenith-display`, so it must land on PATH.
+install(PROGRAMS "${CMAKE_SOURCE_DIR}/tools/display/zenith-display"
+        DESTINATION "${CMAKE_INSTALL_BINDIR}")
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/tools/display/zenith_display"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/zenith"
+        PATTERN "__pycache__" EXCLUDE)
+
 # copy assets (excluding shaders) to build directory, for running without install
 file(COPY "${SUNSHINE_SOURCE_ASSETS_DIR}/linux/assets/"
         DESTINATION "${CMAKE_BINARY_DIR}/assets"
