@@ -1,16 +1,27 @@
 #!/usr/bin/env python3
 """Entry point for the Zenith display autopilot.
 
-Works from the source tree and from an installed location: the package is
-looked up next to this script first, then in the packaged libdir.
+Works from the source tree and from an installed location.  At install time
+CMake substitutes the real libdir below (configure_file), so packaged builds
+never guess; the source-tree copy keeps the placeholder and falls back to
+searching next to itself plus the conventional locations.
 """
 
 import os
 import sys
 
+_INSTALLED_LIBDIR = "@ZENITH_DISPLAY_LIBDIR@"  # replaced by CMake at build time
+
 _HERE = os.path.dirname(os.path.abspath(os.path.realpath(__file__)))
-for candidate in (_HERE, "/usr/lib/zenith", "/usr/lib64/zenith",
-                  "/usr/local/lib/zenith", "/usr/local/lib64/zenith"):
+_candidates = [_HERE]
+if not _INSTALLED_LIBDIR.startswith("@"):
+    _candidates.append(os.path.join(_INSTALLED_LIBDIR, "zenith"))
+_candidates += [
+    "/usr/lib/zenith", "/usr/lib64/zenith",
+    "/usr/local/lib/zenith", "/usr/local/lib64/zenith",
+    "/app/lib/zenith",  # flatpak
+]
+for candidate in _candidates:
     if os.path.isdir(os.path.join(candidate, "zenith_display")):
         sys.path.insert(0, candidate)
         break

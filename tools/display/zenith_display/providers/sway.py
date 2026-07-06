@@ -15,7 +15,7 @@ class SwayProvider(VddProvider):
     description = "sway headless output (swaymsg create_output)"
 
     def _output_names(self, runner: Runner) -> Set[str]:
-        res = runner.run(["swaymsg", "-t", "get_outputs", "--raw"], timeout=5)
+        res = runner.query(["swaymsg", "-t", "get_outputs", "--raw"], timeout=5)
         if not res.ok:
             return set()
         try:
@@ -23,11 +23,10 @@ class SwayProvider(VddProvider):
         except (ValueError, KeyError, TypeError):
             return set()
 
-    def probe(self, env) -> Tuple[bool, str]:
+    def probe(self, env, runner: Runner) -> Tuple[bool, str]:
         if not env.tools.get("swaymsg"):
             return False, "swaymsg not installed"
-        res = Runner().run(["swaymsg", "-t", "get_version"], timeout=5)
-        if res.ok:
+        if runner.query(["swaymsg", "-t", "get_version"], timeout=5).ok:
             return True, "sway IPC reachable"
         return False, "no live sway session"
 

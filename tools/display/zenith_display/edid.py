@@ -68,6 +68,9 @@ _DUMMY_DESCRIPTOR = b"\x00\x00\x00\x10\x00" + b"\x00" * 13
 _DTD_MAX_CLOCK_KHZ = 655_350  # EDID 1.4 detailed-timing ceiling (16-bit, 10 kHz units)
 
 
+_DTD_MAX_DIMENSION = 4095  # 12-bit active-pixel fields in a classic DTD
+
+
 def _fitting_timing(mode: Mode) -> Timing:
     """CVT-RB timing that fits a DTD, degrading refresh if physics demands.
 
@@ -76,6 +79,11 @@ def _fitting_timing(mode: Mode) -> Timing:
     display can simply serve the highest refresh that fits; the stream's
     FPS cap does the rest.
     """
+    if mode.width > _DTD_MAX_DIMENSION or mode.height > _DTD_MAX_DIMENSION:
+        raise ValueError(
+            f"{mode} exceeds the EDID detailed-timing limit of "
+            f"{_DTD_MAX_DIMENSION}px per axis; lower the client resolution"
+        )
     for refresh in (mode.refresh, 120, 100, 60, 30):
         if refresh > mode.refresh:
             continue

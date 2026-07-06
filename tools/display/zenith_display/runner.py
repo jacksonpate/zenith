@@ -26,15 +26,21 @@ class Result:
 
 
 class Runner:
-    """Runs commands; in dry-run mode it only records what would happen."""
+    """Runs commands; dry-run skips *mutations* but still performs queries.
+
+    Read-only commands (``mutating=False``) execute even under ``--dry-run``
+    so previews and plans reflect the machine's real state; anything that
+    changes the system is logged and skipped.
+    """
 
     def __init__(self, dry_run: bool = False) -> None:
         self.dry_run = dry_run
         self.trace: List[List[str]] = []
 
-    def run(self, argv: List[str], timeout: float = 15.0, check: bool = False) -> Result:
+    def run(self, argv: List[str], timeout: float = 15.0, check: bool = False,
+            mutating: bool = True) -> Result:
         self.trace.append(list(argv))
-        if self.dry_run:
+        if self.dry_run and mutating:
             log.info("DRY-RUN: %s", " ".join(argv))
             return Result(argv=argv, returncode=0)
         log.debug("exec: %s", " ".join(argv))
@@ -55,6 +61,10 @@ class Runner:
         if not res.ok:
             log.debug("rc=%d stderr=%s", res.returncode, res.stderr.strip())
         return res
+
+    def query(self, argv: List[str], timeout: float = 15.0, check: bool = False) -> Result:
+        """A read-only command: runs even in dry-run mode."""
+        return self.run(argv, timeout=timeout, check=check, mutating=False)
 
 
 def which(tool: str) -> Optional[str]:

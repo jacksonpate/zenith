@@ -49,3 +49,10 @@ def test_monitor_name_embedded_and_parsed():
 def test_monitor_name_rejects_garbage():
     assert edid.monitor_name(b"") is None
     assert edid.monitor_name(b"\x00" * 128) is None
+
+
+def test_dimensions_beyond_dtd_limit_raise_cleanly():
+    with pytest.raises(ValueError, match="lower the client resolution"):
+        edid.generate(Mode(5120, 1440, 60))
+    with pytest.raises(ValueError, match="lower the client resolution"):
+        edid.generate(Mode(1440, 5120, 60))

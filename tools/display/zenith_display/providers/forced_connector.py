@@ -21,7 +21,7 @@ class ForcedConnectorProvider(VddProvider):
     name = "forced-connector"
     description = "pre-provisioned EDID-forced connector (ZenithVDD)"
 
-    def probe(self, env) -> Tuple[bool, str]:
+    def probe(self, env, runner: Runner) -> Tuple[bool, str]:
         override = os.environ.get("ZENITH_VDD_OUTPUT")
         if override:
             return True, f"ZENITH_VDD_OUTPUT={override}"

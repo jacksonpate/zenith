@@ -15,11 +15,10 @@ class HyprlandProvider(VddProvider):
     name = "hyprland"
     description = "Hyprland headless output (hyprctl output create)"
 
-    def probe(self, env) -> Tuple[bool, str]:
+    def probe(self, env, runner: Runner) -> Tuple[bool, str]:
         if not env.tools.get("hyprctl"):
             return False, "hyprctl not installed"
-        res = Runner().run(["hyprctl", "version"], timeout=5)
-        if res.ok:
+        if runner.query(["hyprctl", "version"], timeout=5).ok:
             return True, "hyprland IPC reachable"
         return False, "no live hyprland session"
 

@@ -24,7 +24,7 @@ class WlrBackend(LayoutBackend):
 
     def _sway(self) -> bool:
         if self._use_sway is None:
-            self._use_sway = self.runner.run(["swaymsg", "-t", "get_version"], timeout=5).ok
+            self._use_sway = self.runner.query(["swaymsg", "-t", "get_version"], timeout=5).ok
         return self._use_sway
 
     # -- state ------------------------------------------------------------
@@ -33,7 +33,7 @@ class WlrBackend(LayoutBackend):
         return self._outputs_sway() if self._sway() else self._outputs_wlr_randr()
 
     def _outputs_sway(self) -> List[OutputState]:
-        res = self.runner.run(["swaymsg", "-t", "get_outputs", "--raw"], timeout=10)
+        res = self.runner.query(["swaymsg", "-t", "get_outputs", "--raw"], timeout=10)
         if not res.ok:
             raise RuntimeError(f"swaymsg get_outputs failed: {res.stderr.strip()}")
         outs = []
@@ -58,7 +58,7 @@ class WlrBackend(LayoutBackend):
         return outs
 
     def _outputs_wlr_randr(self) -> List[OutputState]:
-        res = self.runner.run(["wlr-randr", "--json"], timeout=10)
+        res = self.runner.query(["wlr-randr", "--json"], timeout=10)
         if not res.ok:
             raise RuntimeError(
                 "wlr-randr --json failed (build too old?) and no sway IPC: "

@@ -48,30 +48,27 @@ can leave it disabled — `zenith-display` turns it on only during sessions.
 
 ## 2. Per-session apps
 
-Install the session script and wire two apps into Zenith (web UI → Applications,
-or `apps.json`):
+Nothing to install: every Zenith package ships **Headless** and **Dual
+Display** apps backed by the built-in `zenith-display` autopilot (installed
+to `/usr/bin`). It detects your session (KDE, GNOME, X11, wlroots), spins a
+virtual display at the connecting client's exact resolution and refresh
+(`SUNSHINE_CLIENT_WIDTH/HEIGHT/FPS`), and restores your exact layout when
+the stream ends.
 
-```sh
-sudo install -m 0755 scripts/zenith-display /usr/local/bin/zenith-display
-```
-
-| app name | do command | undo command |
-|---|---|---|
-| Headless | `/usr/local/bin/zenith-display headless` | `/usr/local/bin/zenith-display restore` |
-| Dual Monitor | `/usr/local/bin/zenith-display dual` | `/usr/local/bin/zenith-display restore` |
-
-- **Headless**: your real monitors turn off; the VDD becomes the only display,
-  at the connecting client's exact resolution and refresh (Zenith passes
-  `SUNSHINE_CLIENT_WIDTH/HEIGHT/FPS` to prep-commands).
-- **Dual Monitor**: the VDD appears as an extra monitor to the right of your
+- **Headless**: your real monitors turn off; the VDD becomes the only display.
+- **Dual Display**: the VDD appears as an extra monitor to the right of your
   real layout.
-- **Quit the app in Moonlight**: your exact pre-session layout comes back
-  (mirror groups included) and the VDD goes dark.
+- **Quit the app in Moonlight**: your pre-session layout comes back and the
+  VDD goes dark. Crash-safe: a stale snapshot is restored on the next run.
+- If no VDD mechanism is available the app still launches (you stream the
+  normal desktop); run `sudo zenith-display setup` once to bootstrap the
+  universal EVDI fallback, and `zenith-display doctor` to see what the
+  machine supports.
 
-The layout snapshot lives in `$XDG_RUNTIME_DIR/zenith-display-state.json` and
-every change is applied as a *temporary* Mutter configuration — a crash or
-reboot always falls back to your saved monitor layout, so you can't get
-stranded on an invisible display.
+> **Migrating from the old scripts:** remove any hand-installed copies —
+> `sudo rm -f /usr/local/bin/zenith-display /usr/local/bin/zenith-display-kde
+> /usr/local/bin/zenith-display-auto` — they shadow the packaged autopilot on
+> PATH and use an incompatible state file.
 
 If the virtual connector isn't named `DP-1`, set `ZENITH_VDD_CONNECTOR` in the
 app's environment (or Zenith's global env) to match.

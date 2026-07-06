@@ -22,21 +22,26 @@ class KwinVirtualProvider(VddProvider):
     name = "kwin-virtual"
     description = "KWin runtime virtual output (DBus)"
 
+    _path: Optional[str] = None  # cached across probe/create/destroy
+
     def _find_interface(self, runner: Runner) -> Optional[str]:
+        if self._path:
+            return self._path
         for path in _CANDIDATE_PATHS:
-            res = runner.run(
+            res = runner.query(
                 ["gdbus", "introspect", "--session", "--dest", "org.kde.KWin",
                  "--object-path", path],
                 timeout=5,
             )
             if res.ok and "addOutput" in res.stdout:
+                self._path = path
                 return path
         return None
 
-    def probe(self, env) -> Tuple[bool, str]:
+    def probe(self, env, runner: Runner) -> Tuple[bool, str]:
         if not env.tools.get("gdbus"):
             return False, "gdbus not installed"
-        path = self._find_interface(Runner())
+        path = self._find_interface(runner)
         if path:
             return True, f"KWin addOutput at {path}"
         return False, "this KWin exposes no virtual-output DBus API"
@@ -52,7 +57,7 @@ class KwinVirtualProvider(VddProvider):
             timeout=10,
         )
         if not res.ok:  # try the (name, w, h) arity
-            res = runner.run(
+            runner.run(
                 ["gdbus", "call", "--session", "--dest", "org.kde.KWin",
                  "--object-path", path, "--method", "org.kde.KWin.VirtualOutputs.addOutput",
                  _OUTPUT_NAME, str(mode.width), str(mode.height)],

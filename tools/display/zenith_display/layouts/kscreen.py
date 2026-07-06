@@ -18,7 +18,7 @@ class KScreenBackend(LayoutBackend):
     name = "kscreen"
 
     def _query(self) -> dict:
-        res = self.runner.run(["kscreen-doctor", "-j"], timeout=10)
+        res = self.runner.query(["kscreen-doctor", "-j"], timeout=10)
         if not res.ok:
             raise RuntimeError(f"kscreen-doctor -j failed: {res.stderr.strip()}")
         return json.loads(res.stdout)

@@ -1,11 +1,14 @@
 """VDD providers: ways to make a virtual display exist.
 
-Ordered per environment; the first provider that probes available (after a
-best-effort ``ensure()`` bootstrap) wins.  Each provider answers:
+Ordered per environment; the first provider that probes available wins.
+Each provider answers:
 
-    probe(env)          -> (available, human reason)
-    ensure(env, runner) -> try to become available (load module, install pkg)
-    create(env, runner, mode) -> output-name hint the layout backend will see
+    probe(env, runner)   -> (available, human reason)      [read-only]
+    ensure(env, runner)  -> try to become available (load module, install
+                            package). Only invoked from `zenith-display
+                            setup` — never during a stream handshake.
+    create(env, runner, mode) -> exact output name (or prefix hint) that the
+                            layout backend will see
     destroy(env, runner, state) -> tear down what create() made
 
 Providers never arrange displays — that's the layout backend's job.
@@ -23,7 +26,7 @@ class VddProvider:
     name = "abstract"
     description = ""
 
-    def probe(self, env) -> Tuple[bool, str]:
+    def probe(self, env, runner: Runner) -> Tuple[bool, str]:
         raise NotImplementedError
 
     def ensure(self, env, runner: Runner) -> bool:
@@ -79,19 +82,19 @@ def chain_for(env) -> List[VddProvider]:
     return chain
 
 
-def choose(env, runner: Runner, bootstrap: bool = True):
+def choose(env, runner: Runner, bootstrap: bool = False):
     """Walk the chain; returns (provider, report) where report lists decisions.
 
-    ``ensure()`` (module loads, package installs) only fires while no
-    earlier provider has already qualified — bootstrap is a last resort,
-    not a side effect of reporting.
+    ``bootstrap=True`` (used by `zenith-display setup` only) lets a provider
+    run its ensure() — module loads, package installs — and only while no
+    earlier provider has already qualified.
     """
     report = []
     selected: Optional[VddProvider] = None
     for provider in chain_for(env):
-        ok, reason = provider.probe(env)
+        ok, reason = provider.probe(env, runner)
         if not ok and bootstrap and selected is None and provider.ensure(env, runner):
-            ok, reason = provider.probe(env)
+            ok, reason = provider.probe(env, runner)
         report.append({"provider": provider.name, "available": ok, "reason": reason})
         if ok and selected is None:
             selected = provider

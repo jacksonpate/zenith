@@ -6,7 +6,7 @@ and force the connector on via its sysfs ``status``.  The compositor then
 sees a hot-plugged "monitor" whose only mode is exactly what the client asked
 for.  GPU-vendor agnostic (amdgpu, i915, nouveau, nvidia-drm), no packages —
 but it needs a disconnected physical connector to borrow and root privileges,
-so it sits near the end of the chain.  BETA.
+so it sits at the end of the chain.  BETA.
 """
 
 from __future__ import annotations
@@ -21,6 +21,12 @@ from ..runner import Runner
 from ..snapshot import state_dir
 from . import VddProvider
 
+# Never borrow internal panels or fake outputs (same policy as
+# scripts/zenith-vdd-setup suggest()): forcing an EDID onto these either
+# fights the laptop panel or targets a virtual GPU with no real scanout.
+_EXCLUDED_NAME_PREFIXES = ("eDP", "LVDS", "DSI", "Writeback")
+_EXCLUDED_DRIVERS = {"bochs-drm", "bochs", "virtio_gpu", "vkms", "cirrus", "qxl", "evdi"}
+
 
 class DrmDebugfsProvider(VddProvider):
     name = "drm-debugfs"
@@ -33,24 +39,27 @@ class DrmDebugfsProvider(VddProvider):
         return None
 
     def _pick_connector(self, env):
+        spares = [
+            c for c in env.disconnected_connectors
+            if not c.name.startswith(_EXCLUDED_NAME_PREFIXES)
+            and (c.driver or "") not in _EXCLUDED_DRIVERS
+        ]
         # Prefer DisplayPort connectors: most tolerant of forced EDIDs.
-        spares = env.disconnected_connectors
         spares.sort(key=lambda c: (0 if c.name.startswith("DP") else 1, c.name))
         return spares[0] if spares else None
 
-    def probe(self, env) -> Tuple[bool, str]:
+    def probe(self, env, runner: Runner) -> Tuple[bool, str]:
         if not (env.is_root or env.has_passwordless_sudo):
             return False, "requires root (or passwordless sudo)"
         spare = self._pick_connector(env)
         if not spare:
-            return False, "no disconnected connector to borrow"
+            return False, "no borrowable disconnected connector"
         return True, f"can borrow {spare.name}"
 
     def _write(self, runner: Runner, env, path: str, data_file: str) -> None:
-        if env.is_root:
-            runner.run(["sh", "-c", f"cat '{data_file}' > '{path}'"], timeout=5, check=True)
-        else:
-            runner.run(["sudo", "-n", "sh", "-c", f"cat '{data_file}' > '{path}'"], timeout=5, check=True)
+        cmd = f"cat '{data_file}' > '{path}'"
+        argv = ["sh", "-c", cmd] if env.is_root else ["sudo", "-n", "sh", "-c", cmd]
+        runner.run(argv, timeout=5, check=True)
 
     def _write_str(self, runner: Runner, env, path: str, value: str) -> None:
         cmd = f"printf '%s' '{value}' > '{path}'"

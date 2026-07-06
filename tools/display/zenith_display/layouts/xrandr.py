@@ -16,15 +16,18 @@ _HEAD_RE = re.compile(
     r"^(?P<name>\S+) (?P<status>connected|disconnected)"
     r"(?P<primary> primary)?"
     r"(?: (?P<w>\d+)x(?P<h>\d+)\+(?P<x>\d+)\+(?P<y>\d+))?"
+    r"(?: (?P<rotation>normal|left|right|inverted))?"
 )
 _MODE_RE = re.compile(r"^\s+(?P<w>\d+)x(?P<h>\d+)i?\s+(?P<rates>.+)$")
+
+_SWAPPING_ROTATIONS = ("left", "right")
 
 
 class XrandrBackend(LayoutBackend):
     name = "xrandr"
 
     def _query(self) -> str:
-        res = self.runner.run(["xrandr", "--query"], timeout=10)
+        res = self.runner.query(["xrandr", "--query"], timeout=10)
         if not res.ok:
             raise RuntimeError(f"xrandr --query failed: {res.stderr.strip()}")
         return res.stdout
@@ -32,19 +35,28 @@ class XrandrBackend(LayoutBackend):
     def parse(self, text: str) -> List[OutputState]:
         outs: List[OutputState] = []
         current: Optional[OutputState] = None
+        rotations = {}
         for line in text.splitlines():
             head = _HEAD_RE.match(line)
             if head:
+                rotation = head.group("rotation") or "normal"
+                width = int(head.group("w") or 0)
+                height = int(head.group("h") or 0)
+                # xrandr reports post-rotation geometry; store the panel's
+                # native (mode) orientation so mode names stay real.
+                if rotation in _SWAPPING_ROTATIONS:
+                    width, height = height, width
                 current = OutputState(
                     name=head.group("name"),
                     connected=head.group("status") == "connected",
                     enabled=head.group("w") is not None,
-                    width=int(head.group("w") or 0),
-                    height=int(head.group("h") or 0),
+                    width=width,
+                    height=height,
                     x=int(head.group("x") or 0),
                     y=int(head.group("y") or 0),
                     primary=bool(head.group("primary")),
                 )
+                rotations[current.name] = rotation
                 outs.append(current)
                 continue
             mode = _MODE_RE.match(line)
@@ -56,6 +68,7 @@ class XrandrBackend(LayoutBackend):
                         current.modes.append(label)
                     if is_current:
                         current.refresh = float(value)
+        self._rotations = rotations
         return outs
 
     def outputs(self) -> List[OutputState]:
@@ -63,7 +76,9 @@ class XrandrBackend(LayoutBackend):
 
     def snapshot(self) -> dict:
         outputs = []
-        for out in self.outputs():
+        outs = self.outputs()
+        rotations = getattr(self, "_rotations", {})
+        for out in outs:
             if not out.connected:
                 continue
             outputs.append(
@@ -72,6 +87,7 @@ class XrandrBackend(LayoutBackend):
                     "enabled": out.enabled,
                     "mode": f"{out.width}x{out.height}" if out.enabled else None,
                     "refresh": round(out.refresh) if out.refresh else None,
+                    "rotation": rotations.get(out.name, "normal"),
                     "x": out.x,
                     "y": out.y,
                     "primary": out.primary,
@@ -105,15 +121,22 @@ class XrandrBackend(LayoutBackend):
         )
 
     def restore(self, payload: dict) -> None:
-        args = ["xrandr"]
+        """Replay per-output so one bad entry can't strand the whole layout."""
+        failures = []
         for out in payload.get("outputs", []):
-            args += ["--output", out["name"]]
+            args = ["xrandr", "--output", out["name"]]
             if out.get("enabled") and out.get("mode"):
                 args += ["--mode", out["mode"], "--pos", f"{out.get('x', 0)}x{out.get('y', 0)}"]
                 if out.get("refresh"):
                     args += ["--rate", str(out["refresh"])]
+                if out.get("rotation") and out["rotation"] != "normal":
+                    args += ["--rotate", out["rotation"]]
                 if out.get("primary"):
                     args += ["--primary"]
             else:
                 args += ["--off"]
-        self.runner.run(args, timeout=15, check=True)
+            res = self.runner.run(args, timeout=15)
+            if not res.ok:
+                failures.append(f"{out['name']}: {res.stderr.strip()}")
+        if failures:
+            raise RuntimeError("restore incomplete: " + "; ".join(failures))

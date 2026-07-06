@@ -27,3 +27,11 @@ if [ -x "$path_to_udevadm" ] ; then
 else
   echo "error: udevadm not found or not executable."
 fi
+
+# Zenith display autopilot: make the EVDI virtual-display fallback available
+# immediately (it also loads at boot via modules-load.d/60-sunshine.conf).
+echo "Preparing EVDI virtual display support."
+modprobe evdi 2>/dev/null || echo "evdi module not present (install an evdi package to enable the VDD fallback)."
+if [ -e /sys/devices/evdi/add ]; then
+  chmod 0666 /sys/devices/evdi/add || true
+fi

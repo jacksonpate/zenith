@@ -15,7 +15,7 @@ class FakeRunner(Runner):
         super().__init__(dry_run=False)
         self.responses = responses or {}
 
-    def run(self, argv, timeout=15.0, check=False):
+    def run(self, argv, timeout=15.0, check=False, mutating=True):
         self.trace.append(list(argv))
         key = argv[0]
         canned = self.responses.get(tuple(argv), self.responses.get(key))

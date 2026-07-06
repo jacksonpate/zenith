@@ -1,0 +1,6 @@
+# Zenith display autopilot: let the desktop session create EVDI virtual
+# displays without privileges. The evdi 'add' attribute only spawns an empty
+# DRM device — the device nodes themselves stay governed by the standard drm
+# rules (uaccess/seat ACLs), so this widens nothing security-relevant on a
+# personal streaming host.
+ACTION=="add", SUBSYSTEM=="module", KERNEL=="evdi", RUN+="/bin/sh -c 'chmod 0666 /sys/devices/evdi/add'"

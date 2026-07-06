@@ -54,9 +54,9 @@ def test_chain_includes_compositor_native_for_sway():
 
 def test_forced_connector_probe_uses_edid_scan():
     provider = ForcedConnectorProvider()
-    ok, reason = provider.probe(_env(connectors=[vdd_connector()]))
+    ok, reason = provider.probe(_env(connectors=[vdd_connector()]), FakeRunner())
     assert ok and "DP-1" in reason
-    ok, _ = provider.probe(_env(connectors=[]))
+    ok, _ = provider.probe(_env(connectors=[]), FakeRunner())
     assert not ok
 
 

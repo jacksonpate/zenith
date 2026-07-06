@@ -72,9 +72,14 @@ jobs:
           echo "== plan =="
           tools/display/zenith-display plan || true
 
-          echo "== headless apply at a client mode =="
+          echo "== dry-run must not write state or mutate =="
           export SUNSHINE_CLIENT_WIDTH=2420 SUNSHINE_CLIENT_HEIGHT=1668 SUNSHINE_CLIENT_FPS=60
-          tools/display/zenith-display -v headless
+          tools/display/zenith-display --dry-run --strict headless
+          test ! -e "${XDG_STATE_HOME:-$HOME/.local/state}/zenith/display/snapshot.json" \
+            || { echo "dry-run wrote a snapshot"; exit 1; }
+
+          echo "== headless apply at a client mode =="
+          tools/display/zenith-display -v --strict headless
 
           echo "== VDD is live with the client mode =="
           swaymsg -t get_outputs --raw | python3 -c '
@@ -88,7 +93,7 @@ jobs:
           '
 
           echo "== restore =="
-          tools/display/zenith-display -v restore
+          tools/display/zenith-display -v --strict restore
           swaymsg -t get_outputs --raw | python3 -c '
           import json, sys
           outs = json.load(sys.stdin)
