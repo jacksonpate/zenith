@@ -81,7 +81,7 @@ jobs:
           import json, sys
           outs = json.load(sys.stdin)
           active = [o for o in outs if o["active"]]
-          assert len(active) == 1, f"headless should leave exactly one output: {[o[\"name\"] for o in active]}"
+          assert len(active) == 1, str([o["name"] for o in active])
           mode = active[0]["current_mode"]
           assert (mode["width"], mode["height"]) == (2420, 1668), mode
           print("VDD OK:", active[0]["name"], mode)
