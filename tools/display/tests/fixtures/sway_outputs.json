@@ -1,0 +1,18 @@
+[
+  {
+    "name": "HEADLESS-1",
+    "active": true,
+    "scale": 1.0,
+    "rect": { "x": 0, "y": 0, "width": 1280, "height": 720 },
+    "current_mode": { "width": 1280, "height": 720, "refresh": 0 },
+    "modes": []
+  },
+  {
+    "name": "HEADLESS-2",
+    "active": false,
+    "scale": 1.0,
+    "rect": { "x": 0, "y": 0, "width": 0, "height": 0 },
+    "current_mode": null,
+    "modes": []
+  }
+]

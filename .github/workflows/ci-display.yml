@@ -77,23 +77,24 @@ jobs:
           tools/display/zenith-display -v headless
 
           echo "== VDD is live with the client mode =="
-          wlr-randr --json | python3 -c '
+          swaymsg -t get_outputs --raw | python3 -c '
           import json, sys
           outs = json.load(sys.stdin)
-          vdd = [o for o in outs if o["name"].startswith("HEADLESS-") and o["enabled"]]
-          assert vdd, f"no enabled headless output: {[o[chr(34)+chr(110)+chr(97)+chr(109)+chr(101)+chr(34)] for o in outs]}"
-          mode = next(m for m in vdd[0]["modes"] if m.get("current"))
+          active = [o for o in outs if o["active"]]
+          assert len(active) == 1, f"headless should leave exactly one output: {[o[\"name\"] for o in active]}"
+          mode = active[0]["current_mode"]
           assert (mode["width"], mode["height"]) == (2420, 1668), mode
-          print("VDD OK:", vdd[0]["name"], mode)
+          print("VDD OK:", active[0]["name"], mode)
           '
 
           echo "== restore =="
           tools/display/zenith-display -v restore
-          wlr-randr --json | python3 -c '
+          swaymsg -t get_outputs --raw | python3 -c '
           import json, sys
           outs = json.load(sys.stdin)
-          stray = [o for o in outs if o["name"].startswith("HEADLESS-") and o["enabled"] and o["name"] != "HEADLESS-1"]
-          assert not stray, f"restore left stray outputs: {stray}"
+          names = sorted(o["name"] for o in outs)
+          active = sorted(o["name"] for o in outs if o["active"])
+          assert active == ["HEADLESS-1"], f"restore mismatch: outputs={names} active={active}"
           print("restore OK")
           '
 

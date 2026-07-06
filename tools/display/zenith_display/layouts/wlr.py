@@ -1,14 +1,17 @@
-"""wlroots layout backend (wlr-randr) — Sway, Hyprland, river, Wayfire…
+"""wlroots layout backend — Sway, Hyprland, river, Wayfire…
 
-Any compositor implementing wlr-output-management is driven uniformly here;
-creating the headless output itself is compositor-specific (see the sway and
-hyprland providers).
+Two transports, picked at runtime:
+
+* **sway** (``swaymsg``): JSON IPC has been stable for a decade and ships
+  wherever sway does, so it is preferred when a sway socket answers.
+* **wlr-randr**: for every other wlr-output-management compositor.  Old
+  distro builds predate ``--json``, so parsing failures degrade loudly.
 """
 
 from __future__ import annotations
 
 import json
-from typing import List
+from typing import List, Optional
 
 from ..modes import Mode
 from . import LayoutBackend, OutputState
@@ -17,15 +20,52 @@ from . import LayoutBackend, OutputState
 class WlrBackend(LayoutBackend):
     name = "wlr"
 
-    def _query(self) -> list:
-        res = self.runner.run(["wlr-randr", "--json"], timeout=10)
-        if not res.ok:
-            raise RuntimeError(f"wlr-randr --json failed: {res.stderr.strip()}")
-        return json.loads(res.stdout)
+    _use_sway: Optional[bool] = None
+
+    def _sway(self) -> bool:
+        if self._use_sway is None:
+            self._use_sway = self.runner.run(["swaymsg", "-t", "get_version"], timeout=5).ok
+        return self._use_sway
+
+    # -- state ------------------------------------------------------------
 
     def outputs(self) -> List[OutputState]:
+        return self._outputs_sway() if self._sway() else self._outputs_wlr_randr()
+
+    def _outputs_sway(self) -> List[OutputState]:
+        res = self.runner.run(["swaymsg", "-t", "get_outputs", "--raw"], timeout=10)
+        if not res.ok:
+            raise RuntimeError(f"swaymsg get_outputs failed: {res.stderr.strip()}")
         outs = []
-        for raw in self._query():
+        for raw in json.loads(res.stdout or "[]"):
+            current = raw.get("current_mode") or {}
+            outs.append(
+                OutputState(
+                    name=raw.get("name", ""),
+                    enabled=bool(raw.get("active")),
+                    width=current.get("width", 0),
+                    height=current.get("height", 0),
+                    refresh=(current.get("refresh", 0) or 0) / 1000.0,  # sway: mHz
+                    x=raw.get("rect", {}).get("x", 0),
+                    y=raw.get("rect", {}).get("y", 0),
+                    scale=float(raw.get("scale") or 1.0),
+                    modes=[
+                        f"{m.get('width')}x{m.get('height')}@{round((m.get('refresh', 0) or 0) / 1000.0)}"
+                        for m in raw.get("modes", [])
+                    ],
+                )
+            )
+        return outs
+
+    def _outputs_wlr_randr(self) -> List[OutputState]:
+        res = self.runner.run(["wlr-randr", "--json"], timeout=10)
+        if not res.ok:
+            raise RuntimeError(
+                "wlr-randr --json failed (build too old?) and no sway IPC: "
+                + res.stderr.strip()
+            )
+        outs = []
+        for raw in json.loads(res.stdout):
             current = next((m for m in raw.get("modes", []) if m.get("current")), None)
             outs.append(
                 OutputState(
@@ -52,7 +92,9 @@ class WlrBackend(LayoutBackend):
                 {
                     "name": out.name,
                     "enabled": out.enabled,
-                    "mode": f"{out.width}x{out.height}@{out.refresh:.3f}" if out.enabled else None,
+                    "width": out.width,
+                    "height": out.height,
+                    "refresh": round(out.refresh) if out.refresh else 0,
                     "x": out.x,
                     "y": out.y,
                     "scale": out.scale,
@@ -60,35 +102,43 @@ class WlrBackend(LayoutBackend):
             )
         return {"outputs": outputs}
 
-    def _enable_args(self, vdd: str, mode: Mode, x: int) -> List[str]:
-        return [
-            "wlr-randr",
-            "--output", vdd,
-            "--on",
-            "--custom-mode", f"{mode.width}x{mode.height}@{mode.refresh}Hz",
-            "--pos", f"{x},0",
-        ]
+    # -- mutations ----------------------------------------------------------
+
+    def _enable(self, name: str, mode: Mode, x: int, y: int = 0) -> None:
+        if self._sway():
+            self.runner.run(
+                ["swaymsg", "output", name, "enable", "mode", "--custom",
+                 f"{mode.width}x{mode.height}@{mode.refresh}Hz", "position", str(x), str(y)],
+                timeout=15, check=True,
+            )
+        else:
+            self.runner.run(
+                ["wlr-randr", "--output", name, "--on",
+                 "--custom-mode", f"{mode.width}x{mode.height}@{mode.refresh}Hz",
+                 "--pos", f"{x},{y}"],
+                timeout=15, check=True,
+            )
+
+    def _disable(self, name: str) -> None:
+        if self._sway():
+            self.runner.run(["swaymsg", "output", name, "disable"], timeout=15, check=True)
+        else:
+            self.runner.run(["wlr-randr", "--output", name, "--off"], timeout=15, check=True)
 
     def apply_headless(self, vdd: str, mode: Mode) -> None:
-        self.runner.run(self._enable_args(vdd, mode, 0), timeout=15, check=True)
+        self._enable(vdd, mode, 0)
         for out in self.outputs():
             if out.name != vdd and out.enabled:
-                self.runner.run(["wlr-randr", "--output", out.name, "--off"], timeout=15, check=True)
+                self._disable(out.name)
 
     def apply_dual(self, vdd: str, mode: Mode) -> None:
         edge = self.rightmost_edge([o for o in self.outputs() if o.name != vdd])
-        self.runner.run(self._enable_args(vdd, mode, edge), timeout=15, check=True)
+        self._enable(vdd, mode, edge)
 
     def restore(self, payload: dict) -> None:
         for out in payload.get("outputs", []):
-            args = ["wlr-randr", "--output", out["name"]]
-            if out.get("enabled") and out.get("mode"):
-                args += [
-                    "--on",
-                    "--mode", out["mode"],
-                    "--pos", f"{out.get('x', 0)},{out.get('y', 0)}",
-                    "--scale", str(out.get("scale", 1.0)),
-                ]
+            if out.get("enabled") and out.get("width"):
+                mode = Mode(out["width"], out["height"], out.get("refresh") or 60)
+                self._enable(out["name"], mode, out.get("x", 0), out.get("y", 0))
             else:
-                args += ["--off"]
-            self.runner.run(args, timeout=15)
+                self._disable(out["name"])
