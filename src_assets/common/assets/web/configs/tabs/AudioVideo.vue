@@ -75,6 +75,18 @@ const config = ref(props.config)
               default="true"
     ></Checkbox>
 
+    <PlatformLayout :platform="platform">
+      <template #linux>
+        <!-- Remote Microphone (Zenith) -->
+        <Checkbox class="mb-3"
+                  id="mic_enabled"
+                  locale-prefix="config"
+                  v-model="config.mic_enabled"
+                  default="true"
+        ></Checkbox>
+      </template>
+    </PlatformLayout>
+
     <AdapterNameSelector
         :platform="platform"
         :config="config"

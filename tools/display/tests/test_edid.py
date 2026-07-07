@@ -56,3 +56,30 @@ def test_dimensions_beyond_dtd_limit_raise_cleanly():
         edid.generate(Mode(5120, 1440, 60))
     with pytest.raises(ValueError, match="lower the client resolution"):
         edid.generate(Mode(1440, 5120, 60))
+
+
+def test_multi_mode_edid_structure():
+    modes = [
+        Mode(1920, 1080, 60), Mode(2560, 1440, 60), Mode(2420, 1668, 120),
+        Mode(2752, 2064, 60), Mode(1280, 720, 60),
+    ]
+    blob = edid.generate_multi(modes)
+    # base + one CTA extension (2 base DTDs, 3 overflow into the extension)
+    assert len(blob) == 256
+    assert blob[126] == 1  # extension count
+    assert blob[128] == 0x02 and blob[129] == 0x03  # CTA-861 rev 3
+    for i in range(len(blob) // 128):  # every block checksums to zero
+        assert sum(blob[128 * i:128 * (i + 1)]) % 256 == 0
+    assert edid.monitor_name(blob) == "ZenithVDD"
+    parsed = edid.parse_dtd_mode(blob)
+    assert (parsed.width, parsed.height, parsed.refresh) == (1920, 1080, 60)
+
+
+def test_multi_mode_rejects_undtdable_mode():
+    with pytest.raises(ValueError, match="655.35 MHz"):
+        edid.generate_multi([Mode(1920, 1080, 60), Mode(3840, 2160, 120)])
+
+
+def test_dtd_uses_cvt_rb_sync_polarity():
+    blob = edid.generate(Mode(1920, 1080, 60))
+    assert blob[54 + 17] == 0x1A  # digital separate sync, +hsync -vsync
