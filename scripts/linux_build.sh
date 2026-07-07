@@ -882,6 +882,8 @@ elif grep -q '^ID=fedora$' /etc/os-release && grep -q '^VERSION_ID=44$' /etc/os-
   # F44 default gcc is 16 (too new for nvcc) and ships no gcc14 compat package;
   # gcc15/gcc15-c++ exist and nvcc 13.1 accepts gcc 15.
   gcc_version="15"
+  # glibc 2.42 declares rsqrt/rsqrtf with noexcept(true); CUDA 13's headers don't.
+  cuda_patches=1
   nvm_node=0
 elif grep -q '^ID=fedora$' /etc/os-release && grep -q '^VERSION_ID=45$' /etc/os-release; then
   distro="fedora"
@@ -891,6 +893,8 @@ elif grep -q '^ID=fedora$' /etc/os-release && grep -q '^VERSION_ID=45$' /etc/os-
   cuda_version="13.1.1"
   cuda_build="590.48.01"
   gcc_version="15"
+  # glibc 2.42 declares rsqrt/rsqrtf with noexcept(true); CUDA 13's headers don't.
+  cuda_patches=1
   nvm_node=0
 elif grep -q "Ubuntu 22.04" /etc/os-release; then
   distro="ubuntu"
