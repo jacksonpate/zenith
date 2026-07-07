@@ -1,17 +1,23 @@
-"""Minimal EDID 1.4 generation and parsing.
+"""EDID 1.4 generation and parsing — the one implementation in the repo.
 
-Providers that fabricate a monitor (EVDI, DRM debugfs override) must hand the
-kernel an EDID.  We generate a 128-byte base block advertising exactly one
-detailed timing — the mode the client asked for — under the monitor name
-``ZenithVDD`` so the rest of the stack (and the humans debugging it) can spot
-our virtual displays.  The parser is intentionally tiny: just enough to
-recognize our own displays and verify generated blocks in tests.
+Two entry points:
+
+* ``generate(mode)`` — 128-byte single-mode block for ephemeral VDDs
+  (EVDI, DRM debugfs override): exactly the client's timing.
+* ``generate_multi(modes)`` — multi-mode EDID (base block + CTA-861
+  extension blocks) for permanently provisioned connectors; used by
+  ``scripts/zenith-vdd-setup``.
+
+Every display carries the monitor name ``ZenithVDD`` so the rest of the
+stack (and the humans debugging it) can spot our virtual displays.  The
+parser is intentionally tiny: just enough to recognize our own displays and
+verify generated blocks in tests.
 """
 
 from __future__ import annotations
 
 import struct
-from typing import Optional
+from typing import Optional, Sequence, Tuple
 
 from . import VDD_MONITOR_NAME
 from .modes import Mode, Timing, cvt_rb
@@ -26,7 +32,7 @@ def _manufacturer_id(letters: str) -> bytes:
     return struct.pack(">H", packed)
 
 
-def _detailed_timing(t: Timing) -> bytes:
+def _detailed_timing(t: Timing, size_mm: Tuple[int, int] = (0, 0)) -> bytes:
     """18-byte Detailed Timing Descriptor for a CVT-RB timing."""
     m = t.mode
     h_blank = t.h_total - m.width
@@ -50,8 +56,11 @@ def _detailed_timing(t: Timing) -> bytes:
         | ((t.v_front >> 4) << 2)
         | (t.v_sync >> 4)
     )
-    # Physical size left at zero (virtual display); border pixels zero.
-    d[17] = 0x1E  # digital, separate sync, +hsync +vsync
+    h_mm, v_mm = size_mm
+    d[12] = h_mm & 0xFF
+    d[13] = v_mm & 0xFF
+    d[14] = ((h_mm >> 8) << 4) | (v_mm >> 8)
+    d[17] = 0x1A  # digital, separate sync, +hsync -vsync (CVT-RB convention)
     return bytes(d)
 
 
@@ -63,6 +72,97 @@ def _display_name_descriptor(name: str) -> bytes:
 
 
 _DUMMY_DESCRIPTOR = b"\x00\x00\x00\x10\x00" + b"\x00" * 13
+
+# Monitor range limits: 23-165 Hz vertical, 15-255 kHz horizontal, 660 MHz max
+# pixel clock — generous bounds that keep every mode we generate in range.
+_RANGE_LIMITS_DESCRIPTOR = bytes(
+    [0, 0, 0, 0xFD, 0, 23, 165, 15, 255, 66, 0x0A, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20]
+)
+
+# Multi-mode layout: the base block has four 18-byte descriptor slots; two
+# carry timings (the rest hold the name + range limits), and each CTA-861
+# extension block fits six more.
+_BASE_SLOTS = 2
+_EXT_SLOTS = 6
+
+
+def _checksummed(block: bytearray) -> bytes:
+    block[127] = (256 - sum(block[:127]) % 256) % 256
+    return bytes(block)
+
+
+def _strict_timing(mode: Mode) -> Timing:
+    """CVT-RB timing that must fit a DTD — provisioning never degrades silently."""
+    timing = cvt_rb(mode)
+    if timing.pixel_clock_khz // 10 > 0xFFFF:
+        raise ValueError(
+            f"{mode}: pixel clock {timing.pixel_clock_khz / 1000:.2f} MHz exceeds the "
+            "655.35 MHz DTD limit — drop this mode or lower its refresh rate"
+        )
+    return timing
+
+
+def _cta_extension(timings: Sequence[Timing], size_mm: Tuple[int, int]) -> bytes:
+    """CTA-861 extension block carrying up to six additional DTDs."""
+    block = bytearray(128)
+    block[0] = 0x02
+    block[1] = 0x03  # CTA-861 rev 3
+    block[2] = 4  # DTDs start right after the header (no data blocks)
+    offset = 4
+    for timing in timings:
+        block[offset:offset + 18] = _detailed_timing(timing, size_mm)
+        offset += 18
+    return _checksummed(block)
+
+
+def generate_multi(modes: Sequence[Mode], name: str = VDD_MONITOR_NAME,
+                   size_mm: Tuple[int, int] = (600, 340)) -> bytes:
+    """Multi-mode EDID for a permanently provisioned VDD connector.
+
+    The first mode is the preferred timing.  Raises ValueError for modes a
+    DTD cannot represent — a provisioning tool should fail loudly, not
+    quietly reshape the request.
+    """
+    if not modes:
+        raise ValueError("at least one mode is required")
+    timings = [_strict_timing(m) for m in modes]
+
+    base_timings = timings[:_BASE_SLOTS]
+    ext_timings = timings[_BASE_SLOTS:]
+    ext_blocks = [ext_timings[i:i + _EXT_SLOTS] for i in range(0, len(ext_timings), _EXT_SLOTS)]
+
+    block = bytearray(128)
+    block[0:8] = _HEADER
+    block[8:10] = _manufacturer_id("ZNH")
+    block[10:12] = struct.pack("<H", 0x0002)  # product code: provisioned VDD
+    block[12:16] = struct.pack("<I", 0)
+    block[16] = 1
+    block[17] = 36  # 1990 + 36 = 2026
+    block[18] = 1  # EDID 1.4
+    block[19] = 4
+    block[20] = 0xA5  # digital input, 8 bpc, DisplayPort
+    block[21] = size_mm[0] // 10  # cm
+    block[22] = size_mm[1] // 10
+    block[23] = 120  # gamma 2.2
+    block[24] = 0x06  # sRGB default, preferred timing is native
+    block[25:35] = bytes((0xEE, 0x91, 0xA3, 0x54, 0x4C, 0x99, 0x26, 0x0F, 0x50, 0x54))
+    block[38:54] = b"\x01\x01" * 8
+
+    descriptors = [_detailed_timing(t, size_mm) for t in base_timings]
+    descriptors.append(_RANGE_LIMITS_DESCRIPTOR)
+    descriptors.append(_display_name_descriptor(name))
+    while len(descriptors) < 4:
+        descriptors.append(_DUMMY_DESCRIPTOR)
+    offset = 54
+    for desc in descriptors[:4]:
+        block[offset:offset + 18] = desc
+        offset += 18
+
+    block[126] = len(ext_blocks)
+    edid = _checksummed(block)
+    for ext in ext_blocks:
+        edid += _cta_extension(ext, size_mm)
+    return edid
 
 
 _DTD_MAX_CLOCK_KHZ = 655_350  # EDID 1.4 detailed-timing ceiling (16-bit, 10 kHz units)
