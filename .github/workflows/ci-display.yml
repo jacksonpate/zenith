@@ -1,0 +1,146 @@
+---
+name: CI Display Autopilot
+
+on:
+  pull_request:
+    paths:
+      - "tools/display/**"
+      - ".github/workflows/ci-display.yml"
+  push:
+    branches:
+      - master
+    paths:
+      - "tools/display/**"
+      - ".github/workflows/ci-display.yml"
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Lint + Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"  # oldest interpreter we promise to support
+
+      - name: Install tooling
+        run: python -m pip install pytest ruff
+
+      - name: Ruff
+        run: ruff check tools/display/zenith_display tools/display/tests
+
+      - name: Pytest
+        run: python -m pytest tools/display/tests -v
+
+  sway-integration:
+    name: Integration (headless sway)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install sway + wlr-randr
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sway wlr-randr
+
+      - name: Boot headless sway and exercise the autopilot
+        run: |
+          export WLR_BACKENDS=headless
+          export WLR_LIBINPUT_NO_DEVICES=1
+          export XDG_RUNTIME_DIR=/tmp/xdg
+          mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+          sway --config /dev/null &
+          for i in $(seq 1 50); do
+            SOCK=$(ls "$XDG_RUNTIME_DIR"/sway-ipc.* 2>/dev/null | head -1) && [ -n "$SOCK" ] && break
+            sleep 0.2
+          done
+          export SWAYSOCK="$SOCK"
+          export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=sway
+          export WAYLAND_DISPLAY=$(ls "$XDG_RUNTIME_DIR" | grep -m1 '^wayland-')
+
+          echo "== probe =="
+          tools/display/zenith-display probe
+
+          echo "== plan =="
+          tools/display/zenith-display plan || true
+
+          echo "== dry-run must not write state or mutate =="
+          export SUNSHINE_CLIENT_WIDTH=2420 SUNSHINE_CLIENT_HEIGHT=1668 SUNSHINE_CLIENT_FPS=60
+          tools/display/zenith-display --dry-run --strict headless
+          test ! -e "${XDG_STATE_HOME:-$HOME/.local/state}/zenith/display/snapshot.json" \
+            || { echo "dry-run wrote a snapshot"; exit 1; }
+
+          echo "== headless apply at a client mode =="
+          tools/display/zenith-display -v --strict headless
+
+          echo "== VDD is live with the client mode =="
+          swaymsg -t get_outputs --raw | python3 -c '
+          import json, sys
+          outs = json.load(sys.stdin)
+          active = [o for o in outs if o["active"]]
+          assert len(active) == 1, str([o["name"] for o in active])
+          mode = active[0]["current_mode"]
+          assert (mode["width"], mode["height"]) == (2420, 1668), mode
+          print("VDD OK:", active[0]["name"], mode)
+          '
+
+          echo "== restore =="
+          tools/display/zenith-display -v --strict restore
+          swaymsg -t get_outputs --raw | python3 -c '
+          import json, sys
+          outs = json.load(sys.stdin)
+          names = sorted(o["name"] for o in outs)
+          active = sorted(o["name"] for o in outs if o["active"])
+          assert active == ["HEADLESS-1"], f"restore mismatch: outputs={names} active={active}"
+          print("restore OK")
+          '
+
+  evdi-smoke:
+    name: EVDI bootstrap smoke (best effort)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install + load evdi
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y evdi-dkms libevdi0 || sudo apt-get install -y evdi-dkms
+          sudo modprobe evdi
+          test -d /sys/module/evdi && echo "evdi module loaded"
+
+      - name: Device node materializes
+        run: |
+          echo 1 | sudo tee /sys/devices/evdi/add
+          sleep 1
+          ls -la /sys/devices/platform/evdi.0 2>/dev/null || ls /sys/bus/platform/devices | grep evdi
+
+  powershell:
+    name: Windows scaffold lint + tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          $results = Invoke-ScriptAnalyzer -Path tools/display/windows -Recurse -Severity Warning
+          $results | Format-Table -AutoSize
+          if ($results | Where-Object Severity -eq 'Error') { exit 1 }
+
+      - name: Pester
+        shell: pwsh
+        run: |
+          Install-Module Pester -Force -Scope CurrentUser -MinimumVersion 5.0
+          Invoke-Pester tools/display/windows -CI

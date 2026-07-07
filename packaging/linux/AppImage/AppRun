@@ -94,5 +94,8 @@ fi
 # https://github.com/LizardByte/Sunshine/issues/324
 mkdir -p ~/.config/sunshine
 
+# expose bundled tools (zenith-display) to Zenith prep-commands
+export PATH="$HERE/usr/bin:$PATH"
+
 # run sunshine
 "$SUNSHINE_BIN_HERE" $@

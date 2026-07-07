@@ -8,12 +8,24 @@
       "image-path": "desktop.png"
     },
     {
-      "name": "Low Res Desktop",
+      "name": "Headless",
       "image-path": "desktop.png",
       "prep-cmd": [
         {
-          "do": "xrandr --output HDMI-1 --mode 1920x1080",
-          "undo": "xrandr --output HDMI-1 --mode 1920x1200"
+          "do": "zenith-display headless",
+          "undo": "zenith-display restore",
+          "elevated": "false"
+        }
+      ]
+    },
+    {
+      "name": "Dual Display",
+      "image-path": "desktop.png",
+      "prep-cmd": [
+        {
+          "do": "zenith-display dual",
+          "undo": "zenith-display restore",
+          "elevated": "false"
         }
       ]
     },
