@@ -708,7 +708,7 @@ namespace config {
     {},  // virtual_sink
     true,  // stream audio
     true,  // install_steam_drivers
-    false,  // mic_enabled (Zenith remote microphone)
+    true,  // mic_enabled (Zenith remote microphone) — Zenith default: remote mic ON out of the box
   };
 
   /**
