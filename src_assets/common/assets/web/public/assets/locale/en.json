@@ -262,6 +262,8 @@
     "high_resolution_scrolling_desc": "When enabled, Zenith will pass through high resolution scroll events from Moonlight clients. This can be useful to disable for older applications that scroll too fast with high resolution scroll events.",
     "install_steam_audio_drivers": "Install Steam Audio Drivers",
     "install_steam_audio_drivers_desc": "If Steam is installed, this will automatically install the Steam Streaming Speakers driver to support 5.1/7.1 surround sound and muting host audio.",
+    "capture_pacing": "Capture Pacing (Zenith)",
+    "capture_pacing_desc": "How the KMS capture loop schedules frame grabs. Auto paces on display vblank when the client framerate fits the display refresh and falls back to a timer otherwise. Linux only.",
     "mic_enabled": "Remote Microphone (Zenith)",
     "mic_enabled_desc": "Accept microphone audio from connecting clients (Voidlink/Moonlight forks with mic redirection). Creates a virtual \"Zenith Mic\" source in PipeWire that any application can use. Linux only.",
     "key_repeat_delay": "Key Repeat Delay",

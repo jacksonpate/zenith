@@ -2185,6 +2185,70 @@ editing the `conf` file in a text editor. Use the examples as reference.
     </tr>
 </table>
 
+### capture_pacing
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            How the KMS capture loop schedules frame grabs (Zenith).
+            @note{Applies to Linux only.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            capture_pacing = auto
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            capture_pacing = vblank
+            @endcode</td>
+    </tr>
+    <tr>
+        <td rowspan="3">Choices</td>
+        <td>auto</td>
+        <td>Pace on display vblank when the client framerate fits the display refresh;
+            fall back to a timer when the client asks for more fps than the display refreshes.</td>
+    </tr>
+    <tr>
+        <td>vblank</td>
+        <td>Always wake on DRM CRTC sequence events (at scanout), minimizing sampling staleness.</td>
+    </tr>
+    <tr>
+        <td>timer</td>
+        <td>Steady-clock pacing, the pre-Zenith behavior.</td>
+    </tr>
+</table>
+
+### mic_enabled
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Accept microphone audio from connecting clients (Voidlink and Moonlight forks with
+            mic redirection). Creates a virtual "Zenith Mic" source in PipeWire that any
+            application can use.
+            @note{Applies to Linux only.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            mic_enabled = enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            mic_enabled = disabled
+            @endcode</td>
+    </tr>
+</table>
+
 ### encoder
 
 <table>
