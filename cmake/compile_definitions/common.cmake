@@ -53,7 +53,6 @@ elseif(UNIX)
     endif()
 endif()
 
-include_directories(BEFORE SYSTEM "${CMAKE_SOURCE_DIR}/third-party/nv-codec-headers/include")
 file(GLOB NVENC_SOURCES CONFIGURE_DEPENDS "src/nvenc/*.cpp" "src/nvenc/*.h")
 list(APPEND PLATFORM_TARGET_FILES ${NVENC_SOURCES})
 
@@ -144,6 +143,12 @@ include_directories(
         ${FFMPEG_INCLUDE_DIRS}
         ${Boost_INCLUDE_DIRS}  # has to be the last, or we get runtime error on macOS ffmpeg encoder
 )
+
+# Must beat the FFmpeg prebuilts' bundled ffnvcodec headers (SDK 12 for wide
+# driver support) — src/nvenc pins its ABI to this submodule (SDK 13) with a
+# compile-time gate. Every include_directories(BEFORE) prepends, so the last
+# call wins; keep this after the block above.
+include_directories(BEFORE SYSTEM "${CMAKE_SOURCE_DIR}/third-party/nv-codec-headers/include")
 
 list(APPEND SUNSHINE_EXTERNAL_LIBRARIES
         ${MINIUPNP_LIBRARIES}
