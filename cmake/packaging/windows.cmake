@@ -67,26 +67,15 @@ install(FILES "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/misc/vdd/install-vdd.bat"
               "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/misc/vdd/uninstall-vdd.bat"
         DESTINATION "scripts"
         COMPONENT vdd)
-install(FILES "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/misc/vdd/driver/vdd_settings.xml"
-        DESTINATION "scripts/driver"
-        COMPONENT vdd)
 install(FILES "${CMAKE_SOURCE_DIR}/tools/display/windows/ZenithDisplay.ps1"
         DESTINATION "scripts"
         COMPONENT vdd)
 if(VDD_DRIVER_AVAILABLE)
-    install(FILES "${VDD_DRIVER_DIR}/ZakoVDD.dll"
-                  "${VDD_DRIVER_DIR}/ZakoVDD.inf"
-                  "${VDD_DRIVER_DIR}/zakovdd.cat"
-                  "${VDD_DRIVER_DIR}/ZakoVDD.cer"
-            DESTINATION "scripts/driver/latest"
-            COMPONENT vdd)
-endif()
-if(VDD_WIN10_DRIVER_AVAILABLE)
-    install(FILES "${VDD_WIN10_DRIVER_DIR}/ZakoVDD.dll"
-                  "${VDD_WIN10_DRIVER_DIR}/ZakoVDD.inf"
-                  "${VDD_WIN10_DRIVER_DIR}/zakovdd.cat"
-                  "${VDD_WIN10_DRIVER_DIR}/ZakoVDD.cer"
-            DESTINATION "scripts/driver/win10"
+    install(FILES "${VDD_DRIVER_DIR}/SudoVDA.dll"
+                  "${VDD_DRIVER_DIR}/SudoVDA.inf"
+                  "${VDD_DRIVER_DIR}/sudovda.cat"
+                  "${VDD_DRIVER_DIR}/sudovda.cer"
+            DESTINATION "scripts/driver"
             COMPONENT vdd)
 endif()
 if(NEFCON_AVAILABLE)

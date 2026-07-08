@@ -4,21 +4,22 @@
 
 .DESCRIPTION
     Windows counterpart of the Linux zenith-display tool, driving the bundled
-    ZakoVDD indirect display driver (Sunshine-Foundation lineage, GPL-3.0):
+    SudoVDA indirect display driver (SudoMaker, MIT/CC0):
 
       probe    - JSON fingerprint: driver, control interface, monitors
       ensure   - install the bundled driver if missing (needs admin)
-      headless - create the virtual display, show only it
-      dual     - create the virtual display, extend onto it
+      headless - create a virtual display at the client's mode, show only it
+      dual     - create a virtual display, extend onto it
       restore  - destroy the virtual display, back to physical layout
+      hold     - internal: watchdog pinger spawned by headless/dual
 
-    Control transport is the driver's WDF device interface
-    (GUID DA9F8C2B-7E4F-49A1-9D4E-6F2B0E1A0C4D) carrying NUL-terminated
-    UTF-16 commands (CREATEMONITOR / DESTROYMONITOR) via IOCTL 0x800; the
-    contract is Foundation's vdd_control_ioctl.h, which both repos keep
-    byte-identical. Resolution/refresh matching to the Moonlight client is
-    Zenith's own display-device layer (dd_* options); topology here uses
-    DisplaySwitch, with exact CCD control landing with the native port.
+    Control transport is the driver's device interface
+    (GUID e5bcc234-1e0c-418a-a0d4-ef8b7501414d) with binary-struct IOCTLs
+    from SudoVDA's published sudovda-ioctl.h: ADD_VIRTUAL_DISPLAY carries
+    width/height/refresh directly, so the monitor is born at the exact
+    Moonlight client mode (SUNSHINE_CLIENT_* env). The driver's watchdog
+    auto-removes displays when pings stop, so a hidden holder process pings
+    for the session's lifetime — the same pattern as the Linux evdi holder.
 
 .NOTES
     Requires PowerShell 5.1+. 'ensure' requires elevation.
@@ -26,31 +27,35 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('probe', 'ensure', 'headless', 'dual', 'restore')]
+    [ValidateSet('probe', 'ensure', 'headless', 'dual', 'restore', 'hold')]
     [string]$Command
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# --- ABI facts (Foundation vdd_control_ioctl.h) -----------------------------
+# --- ABI facts (SudoVDA Common/Include/sudovda-ioctl.h) ----------------------
 
-$script:VddInterfaceGuid = [Guid]'DA9F8C2B-7E4F-49A1-9D4E-6F2B0E1A0C4D'
+$script:VddInterfaceGuid = [Guid]'e5bcc234-1e0c-418a-a0d4-ef8b7501414d'
 
 function Get-ZenithVddIoctlCode {
     <# CTL_CODE(FILE_DEVICE_UNKNOWN, Function, METHOD_BUFFERED, Access) —
        pure math so tests can pin the wire values. #>
-    param([uint32]$Function, [uint32]$Access)
+    param([uint32]$Function, [uint32]$Access = 0)  # SudoVDA uses FILE_ANY_ACCESS
     return [uint32]((0x22 -shl 16) -bor ($Access -shl 14) -bor ($Function -shl 2))
 }
 
-$script:IoctlVddCommand = Get-ZenithVddIoctlCode -Function 0x800 -Access 2  # FILE_WRITE_DATA
-$script:IoctlVddPing = Get-ZenithVddIoctlCode -Function 0x801 -Access 1     # FILE_READ_ACCESS
+$script:IoctlAddDisplay = Get-ZenithVddIoctlCode -Function 0x800
+$script:IoctlRemoveDisplay = Get-ZenithVddIoctlCode -Function 0x801
+$script:IoctlGetWatchdog = Get-ZenithVddIoctlCode -Function 0x803
+$script:IoctlDriverPing = Get-ZenithVddIoctlCode -Function 0x888
+
+$script:StateFile = Join-Path $env:LOCALAPPDATA 'Zenith\vdd-state.json'
 
 # Hardware IDs of virtual display drivers we recognize (first = the bundled one).
 $script:KnownVddHardwareIds = @(
-    'Root\ZakoVDD',             # bundled (Sunshine-Foundation lineage)
-    'Root\SudoMakerVDA',        # SudoVDA
+    'Root\SudoMaker\SudoVDA',   # bundled (SudoVDA)
+    'Root\ZakoVDD',             # Sunshine-Foundation lineage
     'Root\MttVDD',              # MikeTheTech Virtual Display Driver
     'Root\Parsec\VDA',          # parsec-vdd
     'Root\IddSampleDriver'      # IddSample derivatives
@@ -65,12 +70,35 @@ function Test-ZenithVddHardwareId {
     return $false
 }
 
-function New-ZenithVddCreateCommand {
-    <# CREATEMONITOR grammar: bare, or with a stable per-client GUID so the
-       driver reuses monitor identity (EDID serial) across sessions. #>
-    param([string]$ClientGuid)
-    if ($ClientGuid) { return "CREATEMONITOR $ClientGuid" }
-    return 'CREATEMONITOR'
+function Get-ZenithClientMode {
+    <# Client mode from the env Zenith sets for prep-cmds; sane fallback. #>
+    $w = 0; $h = 0; $r = 0
+    [void][int]::TryParse($env:SUNSHINE_CLIENT_WIDTH, [ref]$w)
+    [void][int]::TryParse($env:SUNSHINE_CLIENT_HEIGHT, [ref]$h)
+    [void][int]::TryParse($env:SUNSHINE_CLIENT_FPS, [ref]$r)
+    if ($w -lt 1) { $w = 1920 }
+    if ($h -lt 1) { $h = 1080 }
+    if ($r -lt 1) { $r = 60 }
+    [PSCustomObject]@{ Width = [uint32]$w; Height = [uint32]$h; RefreshRate = [uint32]$r }
+}
+
+function New-ZenithAddDisplayPayload {
+    <# VIRTUAL_DISPLAY_ADD_PARAMS: UINT w,h,refresh + GUID + CHAR[14] name +
+       CHAR[14] serial = 56 bytes, packed exactly as the driver reads it. #>
+    param(
+        [Parameter(Mandatory)][uint32]$Width,
+        [Parameter(Mandatory)][uint32]$Height,
+        [Parameter(Mandatory)][uint32]$RefreshRate,
+        [Parameter(Mandatory)][Guid]$MonitorGuid
+    )
+    $buf = New-Object byte[] 56
+    [BitConverter]::GetBytes($Width).CopyTo($buf, 0)
+    [BitConverter]::GetBytes($Height).CopyTo($buf, 4)
+    [BitConverter]::GetBytes($RefreshRate).CopyTo($buf, 8)
+    $MonitorGuid.ToByteArray().CopyTo($buf, 12)
+    [Text.Encoding]::ASCII.GetBytes('ZenithVDA').CopyTo($buf, 28)  # CHAR DeviceName[14]
+    [Text.Encoding]::ASCII.GetBytes($MonitorGuid.ToString('N').Substring(0, 13)).CopyTo($buf, 42)  # CHAR SerialNumber[14]
+    return , $buf
 }
 
 # --- Native interop ----------------------------------------------------------
@@ -121,41 +149,39 @@ function Get-ZenithVddInterfacePath {
     return $null
 }
 
-function Send-ZenithVddIoctl {
-    param(
-        [Parameter(Mandatory)][uint32]$Code,
-        [byte[]]$Payload = $null
-    )
+function Open-ZenithVddHandle {
     $path = Get-ZenithVddInterfacePath
     if (-not $path) { throw 'VDD control interface not found (driver missing or not started)' }
-    # GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ|WRITE, OPEN_EXISTING
-    # ([uint32] literal: PS 5.1 parses bare 0xC0000000 as a negative Int32)
+    # GENERIC_READ|GENERIC_WRITE ([uint32] literal: PS 5.1 parses bare
+    # 0xC0000000 as a negative Int32), FILE_SHARE_READ|WRITE, OPEN_EXISTING
     $handle = [ZenithVddNative]::CreateFileW($path, [uint32]'0xC0000000', 3, [IntPtr]::Zero, 3, 0, [IntPtr]::Zero)
     if ($handle.IsInvalid) { throw "could not open VDD control interface: $path" }
-    try {
-        $out = New-Object byte[] 4096
-        $returned = [uint32]0
-        $inSize = if ($Payload) { [uint32]$Payload.Length } else { [uint32]0 }
-        $ok = [ZenithVddNative]::DeviceIoControl($handle, $Code, $Payload, $inSize, $out, 4096, [ref]$returned, [IntPtr]::Zero)
-        if (-not $ok) {
-            throw "VDD ioctl 0x$($Code.ToString('X')) failed (win32=$([Runtime.InteropServices.Marshal]::GetLastWin32Error()))"
-        }
-        if ($returned -gt 0) { return [Text.Encoding]::Unicode.GetString($out, 0, [int]$returned).TrimEnd([char]0) }
-        return ''
-    } finally {
-        $handle.Close()
-    }
+    return $handle
 }
 
-function Send-ZenithVddCommand {
-    param([Parameter(Mandatory)][string]$Text)
-    $bytes = [Text.Encoding]::Unicode.GetBytes($Text + [char]0)
-    return Send-ZenithVddIoctl -Code $script:IoctlVddCommand -Payload $bytes
+function Invoke-ZenithVddIoctl {
+    param(
+        [Parameter(Mandatory)]$Handle,
+        [Parameter(Mandatory)][uint32]$Code,
+        [byte[]]$Payload = $null,
+        [uint32]$OutSize = 64
+    )
+    $out = New-Object byte[] $OutSize
+    $returned = [uint32]0
+    $inSize = if ($Payload) { [uint32]$Payload.Length } else { [uint32]0 }
+    $ok = [ZenithVddNative]::DeviceIoControl($Handle, $Code, $Payload, $inSize, $out, $OutSize, [ref]$returned, [IntPtr]::Zero)
+    if (-not $ok) {
+        throw "VDD ioctl 0x$($Code.ToString('X')) failed (win32=$([Runtime.InteropServices.Marshal]::GetLastWin32Error()))"
+    }
+    return , $out
 }
 
 function Test-ZenithVddAlive {
-    try { Send-ZenithVddIoctl -Code $script:IoctlVddPing | Out-Null; return $true }
-    catch { return $false }
+    try {
+        $h = Open-ZenithVddHandle
+        try { Invoke-ZenithVddIoctl -Handle $h -Code $script:IoctlDriverPing | Out-Null; return $true }
+        finally { $h.Close() }
+    } catch { return $false }
 }
 
 # --- Monitor plumbing --------------------------------------------------------
@@ -238,8 +264,36 @@ function Invoke-ZenithApply {
         Write-Warning 'no VDD driver available - streaming the physical desktop (run "ZenithDisplay.ps1 ensure")'
         return
     }
+
+    $mode = Get-ZenithClientMode
+    $monitorGuid = [Guid]::NewGuid()
+    $payload = New-ZenithAddDisplayPayload -Width $mode.Width -Height $mode.Height `
+        -RefreshRate $mode.RefreshRate -MonitorGuid $monitorGuid
+
     $before = Get-ZenithMonitorCount
-    Send-ZenithVddCommand (New-ZenithVddCreateCommand -ClientGuid $env:SUNSHINE_CLIENT_UUID) | Out-Null
+    $handle = Open-ZenithVddHandle
+    try {
+        Invoke-ZenithVddIoctl -Handle $handle -Code $script:IoctlAddDisplay -Payload $payload -OutSize 12 | Out-Null
+        $watchdog = Invoke-ZenithVddIoctl -Handle $handle -Code $script:IoctlGetWatchdog -OutSize 8
+        $timeout = [BitConverter]::ToUInt32($watchdog, 0)
+    } finally {
+        $handle.Close()
+    }
+
+    $stateDir = Split-Path $script:StateFile
+    if (-not (Test-Path $stateDir)) { New-Item -ItemType Directory -Path $stateDir -Force | Out-Null }
+    [PSCustomObject]@{ MonitorGuid = $monitorGuid.ToString(); WatchdogTimeout = $timeout } |
+        ConvertTo-Json | Set-Content $script:StateFile
+
+    if ($timeout -gt 0) {
+        # The driver removes the display when pings stop; keep a hidden pinger
+        # alive for the session (restore deletes the state file to end it).
+        Start-Process -WindowStyle Hidden -FilePath 'powershell.exe' -ArgumentList @(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass',
+            '-File', "`"$PSCommandPath`"", 'hold'
+        ) | Out-Null
+    }
+
     if (-not (Wait-ZenithMonitorCount -Above $before)) {
         Write-Warning 'virtual display did not appear - streaming the physical desktop'
         return
@@ -248,10 +302,35 @@ function Invoke-ZenithApply {
     else { Invoke-ZenithTopology '/extend' }
 }
 
+function Invoke-ZenithHold {
+    <# Watchdog pinger: runs hidden until the state file disappears. #>
+    if (-not (Test-Path $script:StateFile)) { return }
+    $state = Get-Content $script:StateFile -Raw | ConvertFrom-Json
+    $interval = [Math]::Max([int]($state.WatchdogTimeout / 3), 1)
+    $failures = 0
+    while (Test-Path $script:StateFile) {
+        if (Test-ZenithVddAlive) { $failures = 0 } else { $failures++ }
+        if ($failures -gt 3) { return }
+        Start-Sleep -Seconds $interval
+    }
+}
+
 function Invoke-ZenithRestore {
-    if (Get-ZenithVddInterfacePath) {
-        try { Send-ZenithVddCommand 'DESTROYMONITOR' | Out-Null }
-        catch { Write-Warning "DESTROYMONITOR failed: $($_.Exception.Message)" }
+    if (Test-Path $script:StateFile) {
+        try {
+            $state = Get-Content $script:StateFile -Raw | ConvertFrom-Json
+            $guid = [Guid]$state.MonitorGuid
+            $handle = Open-ZenithVddHandle
+            try {
+                Invoke-ZenithVddIoctl -Handle $handle -Code $script:IoctlRemoveDisplay `
+                    -Payload ([byte[]]$guid.ToByteArray()) | Out-Null
+            } finally {
+                $handle.Close()
+            }
+        } catch {
+            Write-Warning "virtual display removal failed: $($_.Exception.Message)"
+        }
+        Remove-Item $script:StateFile -Force -ErrorAction SilentlyContinue  # ends the holder
     }
     Invoke-ZenithTopology '/internal'
 }
@@ -262,4 +341,5 @@ switch ($Command) {
     'headless' { Invoke-ZenithApply 'headless' }
     'dual' { Invoke-ZenithApply 'dual' }
     'restore' { Invoke-ZenithRestore }
+    'hold' { Invoke-ZenithHold }
 }
