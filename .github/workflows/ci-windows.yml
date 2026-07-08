@@ -320,9 +320,9 @@ jobs:
           cpack -G ZIP
 
           # move
-          mv ./cpack_artifacts/Sunshine.exe ../artifacts/Sunshine-${{ matrix.name }}-installer.exe
-          mv ./cpack_artifacts/Sunshine.msi ../artifacts/Sunshine-${{ matrix.name }}-installer.msi
-          mv ./cpack_artifacts/Sunshine.zip ../artifacts/Sunshine-${{ matrix.name }}-portable.zip
+          mv ./cpack_artifacts/Zenith.exe ../artifacts/Zenith-${{ matrix.name }}-installer.exe
+          mv ./cpack_artifacts/Zenith.msi ../artifacts/Zenith-${{ matrix.name }}-installer.msi
+          mv ./cpack_artifacts/Zenith.zip ../artifacts/Zenith-${{ matrix.name }}-portable.zip
 
       - name: Sign Windows installers
         # ARM64 is not currently supported, see https://github.com/Azure/artifact-signing-action/issues/92
