@@ -48,57 +48,93 @@ namespace clipboard {
   constexpr std::size_t kMaxTextBytes = 1 * 1024 * 1024;
   constexpr std::size_t kMaxBlobBytes = 50 * 1024 * 1024;
 
+  /**
+   * @brief One decoded clipboard control frame.
+   */
   struct frame_t {
-    kind_e kind;
-    std::uint32_t token;
-    std::vector<std::uint8_t> payload;
+    kind_e kind;  ///< Payload interpretation.
+    std::uint32_t token;  ///< Echo-suppression nonce, echoed back by peers.
+    std::vector<std::uint8_t> payload;  ///< Frame body (kind-dependent).
   };
 
-  /// Serialize a frame into wire bytes. Empty result when payload violates
-  /// the caller-passed limit.
+  /**
+   * @brief Serialize a frame into wire bytes.
+   * @param frame The frame to encode.
+   * @return Wire bytes, or an empty vector when the payload exceeds the limit.
+   */
   std::vector<std::uint8_t> encode(const frame_t &frame);
 
-  /// Parse wire bytes; std::nullopt on malformed/oversized/unknown input.
+  /**
+   * @brief Parse wire bytes into a frame.
+   * @param data Pointer to the frame bytes.
+   * @param size Number of bytes available at @p data.
+   * @return The parsed frame, or std::nullopt on malformed/oversized/unknown input.
+   */
   std::optional<frame_t> decode(const std::uint8_t *data, std::size_t size);
 
   // ---- Host-side sync engine -------------------------------------------
 
-  /// True when clipboard sync is configured on and the platform backend
-  /// works on this machine; drives the RTSP capability bits.
+  /**
+   * @brief Whether clipboard sync should be advertised and driven.
+   * @return True when configured on and the platform backend works here.
+   */
   bool available();
 
-  /// Start watching the local clipboard (idempotent). Called when the first
-  /// session starts.
+  /**
+   * @brief Start watching the local clipboard (idempotent).
+   */
   void start();
 
-  /// Stop watching (last session gone).
+  /**
+   * @brief Stop watching the local clipboard (last session gone).
+   */
   void stop();
 
-  /// Handle a decrypted inbound 0x5508 payload from a client: decode, fetch
-  /// blob refs, echo-suppress, and apply to the local clipboard.
+  /**
+   * @brief Handle a decrypted inbound clipboard payload from a client.
+   * @param data Pointer to the frame bytes.
+   * @param size Number of bytes available at @p data.
+   */
   void on_inbound(const std::uint8_t *data, std::size_t size);
 
-  /// Drain pending outbound frames (local clipboard changes and file
-  /// offers), each already wire-encoded. Called from the control broadcast
-  /// thread tick.
+  /**
+   * @brief Drain pending outbound frames (local changes and file offers).
+   * @return Wire-encoded frames to send, oldest first.
+   */
   std::vector<std::vector<std::uint8_t>> drain_outbound();
 
-  /// Queue a file-transfer offer (kind=4) built from a host file path.
-  /// Returns the offer JSON on success, an empty string when the path is
-  /// not a readable regular file.
+  /**
+   * @brief Queue a file-transfer offer (kind=4) built from a host file path.
+   * @param path Absolute path to a readable regular file on the host.
+   * @return The offer JSON on success, or an empty string when @p path is not
+   *         a readable regular file.
+   */
   std::string offer_file(const std::string &path);
 
   // ---- Blob store (out-of-band payloads on the paired HTTPS server) -----
 
   namespace blob {
-    /// Store bytes; returns the blob id used in kind=3 refs.
+    /**
+     * @brief Store bytes for out-of-band retrieval.
+     * @param mime MIME type reported when the blob is served.
+     * @param bytes The blob contents.
+     * @return The blob id used in kind=3 refs, or an empty string when full.
+     */
     std::string put(std::string mime, std::vector<std::uint8_t> bytes);
 
-    /// Fetch and consume a blob by id.
+    /**
+     * @brief Fetch and consume a stored blob by id.
+     * @param id The blob id from a kind=3 ref.
+     * @return The (mime, bytes) pair, or std::nullopt if unknown/consumed.
+     */
     std::optional<std::pair<std::string, std::vector<std::uint8_t>>> take(const std::string &id);
 
-    /// Resolve a registered file-offer id to its on-disk path (download
-    /// endpoint; does not consume — offers expire by TTL).
+    /**
+     * @brief Resolve a registered file-offer id to its on-disk path.
+     * @param id The offer id from a kind=4 offer.
+     * @return The file path, or std::nullopt if unknown. Does not consume;
+     *         offers expire by TTL.
+     */
     std::optional<std::string> file_path(const std::string &id);
   }  // namespace blob
 
