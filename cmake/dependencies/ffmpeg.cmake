@@ -27,7 +27,7 @@ if(NOT DEFINED FFMPEG_PREPARED_BINARIES)
 
     # Get the current commit/tag from the build-deps submodule
     execute_process(
-        COMMAND git -C "${CMAKE_SOURCE_DIR}/third-party/build-deps" describe --tags --exact-match
+        COMMAND git -C "${CMAKE_SOURCE_DIR}/third-party/build-deps" describe --tags --exact-match --match "v[0-9]*"
         OUTPUT_VARIABLE FFMPEG_RELEASE_TAG
         OUTPUT_STRIP_TRAILING_WHITESPACE
         ERROR_QUIET
@@ -44,7 +44,7 @@ if(NOT DEFINED FFMPEG_PREPARED_BINARIES)
 
         # Try to find a tag that points to this commit
         execute_process(
-            COMMAND git -C "${CMAKE_SOURCE_DIR}/third-party/build-deps" tag --points-at ${BUILD_DEPS_COMMIT}
+            COMMAND git -C "${CMAKE_SOURCE_DIR}/third-party/build-deps" tag --points-at ${BUILD_DEPS_COMMIT} --list "v[0-9]*"
             OUTPUT_VARIABLE FFMPEG_RELEASE_TAG
             OUTPUT_STRIP_TRAILING_WHITESPACE
             ERROR_QUIET
