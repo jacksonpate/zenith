@@ -213,6 +213,12 @@ def cmd_doctor(args) -> int:
         mark = "*" if chosen and entry["provider"] == chosen.name else " "
         state = "ok " if entry["available"] else "-- "
         print(f"   {mark} {state}{entry['provider']:<18} {entry['reason']}")
+    nv_version = detect_mod.nvidia_driver_version()
+    if nv_version and not detect_mod.nvenc_supported(nv_version):
+        print(f"\n  encoder   : NVIDIA driver {nv_version} is older than "
+              f"{detect_mod.NVENC_MIN_DRIVER} — nvenc will refuse and streams")
+        print("  silently fall back to CPU encoding (libx264). Update the driver")
+        print("  to get hardware encoding back.")
     if not chosen:
         print("\n  No provider is ready. Run `sudo zenith-display setup` — it loads or")
         print("  installs whatever this machine needs (evdi module, permissions).")

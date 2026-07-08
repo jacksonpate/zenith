@@ -64,3 +64,22 @@ def test_forced_connector_create_returns_connector_name():
     provider = ForcedConnectorProvider()
     env = _env(connectors=[vdd_connector("DP-3")])
     assert provider.create(env, FakeRunner(), None) == "DP-3"
+
+
+def test_nvenc_supported_thresholds():
+    from zenith_display import detect
+
+    assert detect.nvenc_supported("570.86.16")
+    assert detect.nvenc_supported("610.12")
+    assert not detect.nvenc_supported("550.163.01")
+    assert not detect.nvenc_supported("535.216.01")
+    assert detect.nvenc_supported("weird-vendor-string")  # never warn on guesswork
+
+
+def test_nvidia_driver_version_missing(tmp_path):
+    from zenith_display import detect
+
+    assert detect.nvidia_driver_version(str(tmp_path / "nope")) == ""
+    p = tmp_path / "version"
+    p.write_text("550.163.01\n")
+    assert detect.nvidia_driver_version(str(p)) == "550.163.01"

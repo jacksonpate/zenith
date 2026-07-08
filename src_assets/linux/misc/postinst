@@ -35,3 +35,11 @@ modprobe evdi 2>/dev/null || echo "evdi module not present (install an evdi pack
 if [ -e /sys/devices/evdi/add ]; then
   chmod 0666 /sys/devices/evdi/add || true
 fi
+
+# Start Zenith automatically in every user's graphical session so a fresh
+# install streams without anyone hunting for a service to enable.
+if command -v systemctl >/dev/null 2>&1; then
+  echo "Enabling Zenith user service for all users."
+  systemctl --global enable app-dev.lizardbyte.app.Sunshine.service 2>/dev/null \
+    || echo "warning: could not enable the Zenith user service globally."
+fi
