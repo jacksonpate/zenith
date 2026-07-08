@@ -6,6 +6,30 @@
       "image-path": "desktop.png"
     },
     {
+      "name": "Headless",
+      "prep-cmd": [
+        {
+          "do": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$(SUNSHINE_ROOT)\\scripts\\ZenithDisplay.ps1\" headless",
+          "undo": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$(SUNSHINE_ROOT)\\scripts\\ZenithDisplay.ps1\" restore"
+        }
+      ],
+      "auto-detach": true,
+      "wait-all": true,
+      "image-path": "desktop.png"
+    },
+    {
+      "name": "Dual Display",
+      "prep-cmd": [
+        {
+          "do": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$(SUNSHINE_ROOT)\\scripts\\ZenithDisplay.ps1\" dual",
+          "undo": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$(SUNSHINE_ROOT)\\scripts\\ZenithDisplay.ps1\" restore"
+        }
+      ],
+      "auto-detach": true,
+      "wait-all": true,
+      "image-path": "desktop.png"
+    },
+    {
       "name": "Steam Big Picture",
       "cmd": "steam://open/bigpicture",
       "prep-cmd": [

@@ -83,3 +83,22 @@ app's environment (or Zenith's global env) to match.
   re-run `install` with `--modes` including it (reboot applies).
 - Wrong monitor captured during sessions → pin `output_name` in
   `sunshine.conf` to the VDD, or reorder via GNOME display settings.
+
+## Windows
+
+The Windows installer bundles the signed ZakoVDD indirect display driver
+(Sunshine-Foundation lineage) and installs it during setup, so **Headless**
+and **Dual Display** work out of the box: the default apps run
+`scripts\ZenithDisplay.ps1`, which creates/destroys the virtual monitor over
+the driver's IOCTL control interface and switches the display topology.
+
+- The driver never installed (setup skipped, older package)? Run
+  `powershell -File "C:\Program Files\Zenith\scripts\ZenithDisplay.ps1" ensure`
+  once as admin.
+- Resolution/refresh follow the Moonlight client through Zenith's display
+  device options (`dd_resolution_option = auto`); the mode list the driver
+  advertises lives in `config\vdd_settings.xml`.
+- `ZenithDisplay.ps1 probe` prints a JSON diagnosis (driver present, control
+  interface reachable, monitor count).
+- Topology switching currently uses DisplaySwitch (external/extend/internal);
+  exact multi-monitor CCD control lands with the native integration.
