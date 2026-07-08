@@ -400,8 +400,30 @@ namespace confighttp {
       });
     };
 
+    // Same-origin by construction: when the Origin/Referer authority equals
+    // the Host header the browser used to reach us, the request cannot be
+    // cross-site — regardless of which name, IP, or tailnet address this
+    // host is reached by. This is what makes first-run setup work from
+    // another machine with zero configuration; csrf_allowed_origins remains
+    // for reverse proxies, where Host and Origin legitimately differ.
+    auto authority_of = [](const std::string &url) -> std::string_view {
+      std::string_view v {url};
+      auto scheme = v.find("://");
+      if (scheme == std::string_view::npos) {
+        return {};
+      }
+      auto rest = v.substr(scheme + 3);
+      auto cut = rest.find('/');
+      return cut == std::string_view::npos ? rest : rest.substr(0, cut);
+    };
+    const auto host_it = request->header.find("Host");
+
     // Check if the request is from the same origin (Origin or Referer header matches configured allowed origins)
     const auto origin_it = request->header.find("Origin");
+    if (origin_it != request->header.end() && host_it != request->header.end() &&
+        !authority_of(origin_it->second).empty() && authority_of(origin_it->second) == host_it->second) {
+      return true;
+    }
     if (origin_it != request->header.end() && is_allowed_origin(origin_it->second)) {
       // Same origin request - allow without CSRF token
       return true;
@@ -409,6 +431,10 @@ namespace confighttp {
 
     // If we have a Referer header, check if it's same-origin
     const auto referer_it = request->header.find("Referer");
+    if (referer_it != request->header.end() && host_it != request->header.end() &&
+        !authority_of(referer_it->second).empty() && authority_of(referer_it->second) == host_it->second) {
+      return true;
+    }
     if (referer_it != request->header.end() && is_allowed_origin(referer_it->second)) {
       // Same origin request - allow without CSRF token
       return true;
