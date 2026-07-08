@@ -22,6 +22,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build-windows:
+    name: Windows
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci-windows.yml
+    with:
+      publish_release: 'false'
+      release_commit: ${{ github.sha }}
+      release_version: '0.0.0'
+
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
