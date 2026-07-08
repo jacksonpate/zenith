@@ -86,19 +86,25 @@ app's environment (or Zenith's global env) to match.
 
 ## Windows
 
-The Windows installer bundles the signed ZakoVDD indirect display driver
-(Sunshine-Foundation lineage) and installs it during setup, so **Headless**
-and **Dual Display** work out of the box: the default apps run
-`scripts\ZenithDisplay.ps1`, which creates/destroys the virtual monitor over
-the driver's IOCTL control interface and switches the display topology.
+The Windows installer bundles the SudoVDA indirect display driver (SudoMaker,
+MIT/CC0) and installs it during setup — its certificate goes into the Root and
+TrustedPublisher stores, which is sufficient for a UMDF driver on stock
+Windows: no test mode, Secure Boot stays on. **Headless** and **Dual Display**
+work out of the box: the default apps run `scripts\ZenithDisplay.ps1`, which
+creates the virtual monitor **at the exact client resolution/refresh**
+(SudoVDA's ADD ioctl takes the mode directly) and destroys it on session end.
+The driver's watchdog removes displays when pings stop, so a hidden holder
+process pings for the session — crash-safe by construction.
 
 - The driver never installed (setup skipped, older package)? Run
   `powershell -File "C:\Program Files\Zenith\scripts\ZenithDisplay.ps1" ensure`
   once as admin.
-- Resolution/refresh follow the Moonlight client through Zenith's display
-  device options (`dd_resolution_option = auto`); the mode list the driver
-  advertises lives in `config\vdd_settings.xml`.
+- Pair it with `dd_configuration_option = ensure_only_display` for true
+  headless behavior (other displays deactivate for the session and restore
+  after).
 - `ZenithDisplay.ps1 probe` prints a JSON diagnosis (driver present, control
-  interface reachable, monitor count).
+  interface reachable, ping, monitor count).
 - Topology switching currently uses DisplaySwitch (external/extend/internal);
   exact multi-monitor CCD control lands with the native integration.
+- Upgrading from a ZakoVDD-based build: the installer removes the old device
+  node automatically.
