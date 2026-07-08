@@ -20,6 +20,7 @@
 #include <Simple-Web-Server/server_http.hpp>
 
 // local includes
+#include "clipboard.h"
 #include "config.h"
 #include "display_device.h"
 #include "file_handler.h"
@@ -1247,6 +1248,70 @@ namespace nvhttp {
     response->close_connection_after_response = true;
   }
 
+  /**
+   * @brief Serve and consume an out-of-band clipboard blob (kind=3 refs).
+   */
+  void clipboard_blob_get(resp_https_t response, req_https_t request) {
+    print_req<SunshineHTTPS>(request);
+
+    auto blob = clipboard::blob::take(request->path_match[1]);
+    if (!blob) {
+      response->write(SimpleWeb::StatusCode::client_error_not_found);
+      response->close_connection_after_response = true;
+      return;
+    }
+    SimpleWeb::CaseInsensitiveMultimap headers;
+    headers.emplace("Content-Type", blob->first);
+    response->write(SimpleWeb::StatusCode::success_ok, std::string(blob->second.begin(), blob->second.end()), headers);
+    response->close_connection_after_response = true;
+  }
+
+  /**
+   * @brief Accept a client-uploaded clipboard blob; replies {"id":...}.
+   */
+  void clipboard_blob_post(resp_https_t response, req_https_t request) {
+    print_req<SunshineHTTPS>(request);
+
+    auto content = request->content.string();
+    auto type = request->header.find("content-type");
+    auto mime = type != request->header.end() ? type->second : std::string("application/octet-stream");
+
+    auto id = clipboard::blob::put(mime, std::vector<std::uint8_t>(content.begin(), content.end()));
+    SimpleWeb::CaseInsensitiveMultimap headers;
+    headers.emplace("Content-Type", "application/json");
+    if (id.empty()) {
+      response->write(SimpleWeb::StatusCode::client_error_payload_too_large, R"({"error":"blob store full or payload too large"})", headers);
+    } else {
+      response->write(SimpleWeb::StatusCode::success_ok, "{\"id\":\"" + id + "\"}", headers);
+    }
+    response->close_connection_after_response = true;
+  }
+
+  /**
+   * @brief Stream a file-transfer offer's bytes from disk (kind=4 offers).
+   */
+  void clipboard_file_get(resp_https_t response, req_https_t request) {
+    print_req<SunshineHTTPS>(request);
+
+    auto path = clipboard::blob::file_path(request->path_match[1]);
+    if (!path) {
+      response->write(SimpleWeb::StatusCode::client_error_not_found);
+      response->close_connection_after_response = true;
+      return;
+    }
+    auto in = std::make_shared<std::ifstream>(*path, std::ios::binary);
+    if (!in->good()) {
+      response->write(SimpleWeb::StatusCode::client_error_gone);
+      response->close_connection_after_response = true;
+      return;
+    }
+    SimpleWeb::CaseInsensitiveMultimap headers;
+    headers.emplace("Content-Type", "application/octet-stream");
+    headers.emplace("Content-Disposition", "attachment; filename=\"" + std::filesystem::path(*path).filename().string() + "\"");
+    response->write(SimpleWeb::StatusCode::success_ok, *in, headers);
+    response->close_connection_after_response = true;
+  }
+
   void setup(const std::string &pkey, const std::string &cert) {
     conf_intern.pkey = pkey;
     conf_intern.servercert = cert;
@@ -1370,6 +1435,9 @@ namespace nvhttp {
       resume(host_audio, resp, req);
     };
     https_server.resource["^/cancel$"]["GET"] = cancel;
+    https_server.resource["^/api/v1/clipboard/blob$"]["POST"] = clipboard_blob_post;
+    https_server.resource["^/api/v1/clipboard/blob/([a-fA-F0-9-]+)$"]["GET"] = clipboard_blob_get;
+    https_server.resource["^/clipboard/file/([a-fA-F0-9-]+)$"]["GET"] = clipboard_file_get;
 
     https_server.config.reuse_address = true;
     https_server.config.address = net::get_bind_address(address_family);

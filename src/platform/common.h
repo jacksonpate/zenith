@@ -382,6 +382,15 @@ namespace platf {
      * @brief Capability bit indicating controller touchpad support.
      */
     constexpr caps_t controller_touch = 0x02;  // Controller touch events
+    /**
+     * @brief Capability bit advertising clipboard text sync
+     *        (Sunshine-Foundation ecosystem value; see src/clipboard.h).
+     */
+    constexpr caps_t clipboard_text = 0x04;
+    /**
+     * @brief Capability bit advertising clipboard image sync.
+     */
+    constexpr caps_t clipboard_image = 0x08;
   };  // namespace platform_caps
 
   /**
@@ -1254,6 +1263,29 @@ namespace platf {
    * @return Capability flags.
    */
   platform_caps::caps_t get_capabilities();
+
+  /**
+   * @brief Host clipboard access for the sync engine (src/clipboard.h).
+   *
+   * Linux implements this in-session via wl-clipboard/xclip; platforms
+   * without an implementation report unavailable and the capability bits
+   * are never advertised.
+   */
+  namespace clipboard {
+    /// Whether this platform/session can read and write the clipboard.
+    bool available();
+
+    /// Start invoking `cb` on local clipboard changes. Returns false when
+    /// watching cannot be established.
+    bool start_watch(std::function<void()> cb);
+    void stop_watch();
+
+    /// Read the current clipboard: image/png preferred, else UTF-8 text.
+    std::optional<std::pair<std::string, std::vector<std::uint8_t>>> read();
+
+    /// Replace the clipboard content with `bytes` of `mime`.
+    bool write(const std::string &mime, const std::vector<std::uint8_t> &bytes);
+  }  // namespace clipboard
 
   constexpr auto SERVICE_NAME = "Sunshine";  ///< mDNS service instance name advertised for GameStream discovery.
   constexpr auto SERVICE_TYPE = "_nvstream._tcp";  ///< mDNS service type advertised for GameStream discovery.

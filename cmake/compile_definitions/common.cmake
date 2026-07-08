@@ -67,6 +67,8 @@ set(SUNSHINE_TARGET_FILES
         "${CMAKE_SOURCE_DIR}/src/utility.h"
         "${CMAKE_SOURCE_DIR}/src/uuid.h"
         "${CMAKE_SOURCE_DIR}/src/config.h"
+        "${CMAKE_SOURCE_DIR}/src/clipboard.h"
+        "${CMAKE_SOURCE_DIR}/src/clipboard.cpp"
         "${CMAKE_SOURCE_DIR}/src/config.cpp"
         "${CMAKE_SOURCE_DIR}/src/display_device.h"
         "${CMAKE_SOURCE_DIR}/src/display_device.cpp"

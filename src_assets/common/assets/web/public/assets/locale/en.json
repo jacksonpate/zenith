@@ -303,6 +303,8 @@
     "motion_as_ds4_desc": "If disabled, motion sensors will not be taken into account during gamepad type selection.",
     "mouse": "Enable Mouse Input",
     "mouse_desc": "Allows guests to control the host system with the mouse",
+    "clipboard_sync": "Clipboard Sync (Zenith)",
+    "clipboard_sync_desc": "Share the clipboard with capable Moonlight clients (VoidLink, Foundation-family apps) in both directions: text and images. Currently active on Linux hosts with wl-clipboard (Wayland) or xclip (X11) installed.",
     "native_pen_touch": "Native Pen/Touch Support",
     "native_pen_touch_desc": "When enabled, Zenith will pass through native pen/touch events from Moonlight clients. This can be useful to disable for older applications without native pen/touch support.",
     "notify_pre_releases": "PreRelease Notifications",

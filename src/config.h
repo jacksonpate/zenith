@@ -287,6 +287,7 @@ namespace config {
 
     bool high_resolution_scrolling;  ///< Enable high-resolution mouse-wheel events.
     bool native_pen_touch;  ///< Enable native pen and touch injection.
+    bool clipboard_sync;  ///< Sync clipboard with clients (Zenith; Linux in-session only).
   };
 
   namespace flag {

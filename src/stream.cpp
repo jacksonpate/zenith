@@ -21,6 +21,7 @@ extern "C" {
 }
 
 // local includes
+#include "clipboard.h"
 #include "config.h"
 #include "display_device.h"
 #include "globals.h"
@@ -50,6 +51,7 @@ constexpr int IDX_RUMBLE_TRIGGER_DATA = 12;  ///< Control-stream message index f
 constexpr int IDX_SET_MOTION_EVENT = 13;  ///< Control-stream message index for set motion event.
 constexpr int IDX_SET_RGB_LED = 14;  ///< Control-stream message index for set rgb led.
 constexpr int IDX_SET_ADAPTIVE_TRIGGERS = 15;  ///< Control-stream message index for set adaptive triggers.
+constexpr int IDX_CLIPBOARD = 20;  ///< Clipboard sync frames (Sunshine-Foundation ecosystem; indexes 16-19 reserved for parity).
 
 static const short packetTypes[] = {
   0x0305,  // Start A
@@ -68,6 +70,11 @@ static const short packetTypes[] = {
   0x5501,  // Set motion event (Sunshine protocol extension)
   0x5502,  // Set RGB LED (Sunshine protocol extension)
   0x5503,  // Set Adaptive triggers (Sunshine protocol extension)
+  0x5504,  // Microphone data (reserved: Zenith mic uses its own UDP port)
+  0x5505,  // Microphone config (reserved)
+  0x5506,  // Dynamic parameter change (reserved)
+  0x5507,  // Resolution change (reserved)
+  0x5508,  // Clipboard sync (Sunshine-Foundation ecosystem; see src/clipboard.h)
 };
 
 namespace asio = boost::asio;
@@ -603,6 +610,49 @@ namespace stream {
   }
 
   /**
+   * @brief encode_control for variable-length payloads (heap buffer).
+   *
+   * Same wire behavior as the std::array overload; used by messages whose
+   * size is only known at runtime (clipboard frames).
+   */
+  static inline std::string_view encode_control_dyn(session_t *session, const std::string_view &plaintext, std::vector<std::uint8_t> &tagged_cipher) {
+    if (session->config.controlProtocolType != 13) {
+      return plaintext;
+    }
+
+    tagged_cipher.resize(sizeof(control_encrypted_t) + crypto::cipher::round_to_pkcs7_padded(plaintext.size()) + crypto::cipher::tag_size);
+
+    auto seq = session->control.seq++;
+
+    auto &iv = session->control.outgoing_iv;
+    if (session->config.encryptionFlagsEnabled & SS_ENC_CONTROL_V2) {
+      iv.resize(12);
+      std::copy_n((uint8_t *) &seq, sizeof(seq), std::begin(iv));
+      iv[10] = 'H';  // Host originated
+      iv[11] = 'C';  // Control stream
+    } else {
+      iv.resize(16);
+      iv[0] = (std::uint8_t) seq;
+    }
+
+    auto packet = (control_encrypted_p) tagged_cipher.data();
+
+    auto bytes = session->control.cipher.encrypt(plaintext, packet->payload(), &iv);
+    if (bytes <= 0) {
+      BOOST_LOG(error) << "Couldn't encrypt control data"sv;
+      return {};
+    }
+
+    std::uint16_t packet_length = bytes + crypto::cipher::tag_size + sizeof(control_encrypted_t::seq);
+
+    packet->encryptedHeaderType = util::endian::little(0x0001);
+    packet->length = util::endian::little(packet_length);
+    packet->seq = util::endian::little(seq);
+
+    return std::string_view {(char *) tagged_cipher.data(), packet_length + sizeof(control_encrypted_t) - sizeof(control_encrypted_t::seq)};
+  }
+
+  /**
    * @brief Start periodic mDNS and service-discovery broadcasts.
    *
    * @param ctx Native context object used by the operation or callback.
@@ -1068,6 +1118,39 @@ namespace stream {
   }
 
   /**
+   * @brief Send one wire-encoded clipboard frame over the control channel.
+   * @param session Active streaming session.
+   * @param wire Frame bytes produced by clipboard::encode().
+   * @return 0 when queued; nonzero when the peer is missing or send fails.
+   */
+  int send_clipboard(session_t *session, const std::vector<std::uint8_t> &wire) {
+    if (!session->control.peer) {
+      return -1;
+    }
+    if (wire.empty() || wire.size() > 65500 - sizeof(control_header_v2)) {
+      BOOST_LOG(warning) << "clipboard: frame of "sv << wire.size() << " bytes exceeds the control-stream ceiling"sv;
+      return -1;
+    }
+
+    std::vector<std::uint8_t> plaintext(sizeof(control_header_v2) + wire.size());
+    auto hdr = (control_header_v2 *) plaintext.data();
+    hdr->type = packetTypes[IDX_CLIPBOARD];
+    hdr->payloadLength = wire.size();
+    std::copy(wire.begin(), wire.end(), plaintext.begin() + sizeof(control_header_v2));
+
+    std::vector<std::uint8_t> encrypted;
+    auto payload = encode_control_dyn(session, std::string_view {(char *) plaintext.data(), plaintext.size()}, encrypted);
+    if (payload.empty()) {
+      return -1;
+    }
+    if (session->broadcast_ref->control_server.send(payload, session->control.peer)) {
+      BOOST_LOG(warning) << "Couldn't send clipboard frame"sv;
+      return -1;
+    }
+    return 0;
+  }
+
+  /**
    * @brief Send the selected HDR mode to the connected client over the control channel.
    *
    * @param session Active streaming or pairing session for the request.
@@ -1111,6 +1194,14 @@ namespace stream {
   void controlBroadcastThread(control_server_t *server) {
     server->map(packetTypes[IDX_PERIODIC_PING], [](session_t *session, const std::string_view &payload) {
       BOOST_LOG(verbose) << "type [IDX_PERIODIC_PING]"sv;
+    });
+
+    server->map(packetTypes[IDX_CLIPBOARD], [](session_t *session, const std::string_view &payload) {
+      BOOST_LOG(debug) << "type [IDX_CLIPBOARD]"sv;
+      if (!clipboard::available()) {
+        return;
+      }
+      clipboard::on_inbound((const std::uint8_t *) payload.data(), payload.size());
     });
 
     server->map(packetTypes[IDX_START_A], [&](session_t *session, const std::string_view &payload) {
@@ -1257,8 +1348,16 @@ namespace stream {
     // termination when we shut down.
     auto shutdown_event = mail::man->event<bool>(mail::shutdown);
     auto broadcast_shutdown_event = mail::man->event<bool>(mail::broadcast_shutdown);
+
+    if (clipboard::available()) {
+      clipboard::start();
+    }
+
     while (!shutdown_event->peek() && !broadcast_shutdown_event->peek()) {
       bool has_session_awaiting_peer = false;
+
+      // Local clipboard changes and file offers fan out to every session.
+      auto clipboard_frames = clipboard::drain_outbound();
 
       {
         auto lg = server->_sessions.lock();
@@ -1314,6 +1413,10 @@ namespace stream {
 
               send_hdr_mode(session, std::move(hdr_info));
             }
+
+            for (const auto &frame : clipboard_frames) {
+              send_clipboard(session, frame);
+            }
           }
 
           ++pos;
@@ -1328,6 +1431,8 @@ namespace stream {
 
       server->iterate(150ms);
     }
+
+    clipboard::stop();
 
     // Let all remaining connections know the server is shutting down
     // reason: graceful termination
