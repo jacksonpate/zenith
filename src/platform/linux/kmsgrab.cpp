@@ -1513,6 +1513,7 @@ namespace platf {
        * more fps than the display refreshes (vblank events would cap delivery at the
        * refresh rate; a timer can oversample). Falls back to timer pacing when the
        * driver doesn't support the sequence ioctl (returns via wait_vblank()).
+       * @param config Session video parameters (client framerate).
        */
       void init_pacing(const ::video::config_t &config) {
         vblank_pacing = false;

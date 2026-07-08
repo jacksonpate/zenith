@@ -62,11 +62,8 @@ jobs:
             arch: x86_64
             msystem: ucrt64
             toolchain: ucrt-x86_64
-          - name: Windows-ARM64
-            os: windows-11-arm
-            arch: aarch64
-            msystem: clangarm64
-            toolchain: clang-aarch64
+          # Windows-ARM64 disabled: jacksonpate/build-deps ships no ARM64
+          # FFmpeg; re-add with the matrix entry when that artifact exists.
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -323,9 +320,9 @@ jobs:
           cpack -G ZIP
 
           # move
-          mv ./cpack_artifacts/Sunshine.exe ../artifacts/Sunshine-${{ matrix.name }}-installer.exe
-          mv ./cpack_artifacts/Sunshine.msi ../artifacts/Sunshine-${{ matrix.name }}-installer.msi
-          mv ./cpack_artifacts/Sunshine.zip ../artifacts/Sunshine-${{ matrix.name }}-portable.zip
+          mv ./cpack_artifacts/Zenith.exe ../artifacts/Zenith-${{ matrix.name }}-installer.exe
+          mv ./cpack_artifacts/Zenith.msi ../artifacts/Zenith-${{ matrix.name }}-installer.msi
+          mv ./cpack_artifacts/Zenith.zip ../artifacts/Zenith-${{ matrix.name }}-portable.zip
 
       - name: Sign Windows installers
         # ARM64 is not currently supported, see https://github.com/Azure/artifact-signing-action/issues/92

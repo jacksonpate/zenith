@@ -1367,34 +1367,45 @@ namespace stream {
    *
    * @param ctx Native context object used by the operation or callback.
    */
-  // Zenith remote microphone (M1) — wire format shared with Sunshine-Foundation
-  // clients; see docs/design/remote-mic.md. Sequence numbers are little-endian.
+  /**
+   * @brief Zenith remote microphone (M1) — wire format shared with
+   *        Sunshine-Foundation clients; see docs/design/remote-mic.md.
+   *        Sequence numbers are little-endian on the wire.
+   */
   namespace mic {
-    constexpr std::uint8_t kPacketTypeOpus = 0x61;  // legacy 8-bit packet type
-    constexpr std::uint16_t kPacketTypeExt = 0x5504;  // 16-bit extended packet type
+    constexpr std::uint8_t kPacketTypeOpus = 0x61;  ///< Legacy 8-bit packet type.
+    constexpr std::uint16_t kPacketTypeExt = 0x5504;  ///< 16-bit extended packet type.
 
 #pragma pack(push, 1)
 
-    struct packet_header_t {  // 12 bytes (legacy, moonlight-common-c mic branch)
-      std::uint8_t flags;
-      std::uint8_t packetType;
-      std::uint16_t sequenceNumber;  // little-endian
-      std::uint32_t timestamp;
-      std::uint32_t ssrc;
+    /**
+     * @brief Legacy 12-byte mic datagram header (moonlight-common-c mic branch).
+     */
+    struct packet_header_t {
+      std::uint8_t flags;  ///< RTP-style flags byte; unused by Zenith.
+      std::uint8_t packetType;  ///< ::kPacketTypeOpus for Opus payloads.
+      std::uint16_t sequenceNumber;  ///< Wire order little-endian.
+      std::uint32_t timestamp;  ///< Sender timestamp; unused by Zenith.
+      std::uint32_t ssrc;  ///< RTP synchronization source; unused by Zenith.
     };
 
-    struct packet_header_ext_t {  // 13 bytes (16-bit type extension)
-      std::uint8_t header;
-      std::uint16_t packetType;
-      std::uint16_t sequenceNumber;  // little-endian
-      std::uint32_t timestamp;
-      std::uint32_t ssrc;
+    /**
+     * @brief 13-byte mic datagram header carrying the 16-bit extended type.
+     */
+    struct packet_header_ext_t {
+      std::uint8_t header;  ///< RTP-style flags byte; unused by Zenith.
+      std::uint16_t packetType;  ///< ::kPacketTypeExt for Opus payloads.
+      std::uint16_t sequenceNumber;  ///< Wire order little-endian.
+      std::uint32_t timestamp;  ///< Sender timestamp; unused by Zenith.
+      std::uint32_t ssrc;  ///< RTP synchronization source; unused by Zenith.
     };
 
 #pragma pack(pop)
 
     /**
      * @brief Parse one mic datagram and forward its Opus payload to the audio backend.
+     * @param data Raw datagram bytes as received from the mic socket.
+     * @param bytes Datagram length in bytes.
      */
     inline void handle_packet(const char *data, std::size_t bytes) {
       if (bytes > sizeof(packet_header_ext_t)) {
@@ -1419,6 +1430,10 @@ namespace stream {
     }
   }  // namespace mic
 
+  /**
+   * @brief Receive loop demultiplexing video/audio/mic datagrams to sessions.
+   * @param ctx Broadcast context owning the sockets and session queues.
+   */
   void recvThread(broadcast_ctx_t &ctx) {
     std::map<av_session_id_t, message_queue_t> peer_to_video_session;
     std::map<av_session_id_t, message_queue_t> peer_to_audio_session;

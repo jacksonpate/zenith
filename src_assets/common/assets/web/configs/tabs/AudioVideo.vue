@@ -84,6 +84,17 @@ const config = ref(props.config)
                   v-model="config.mic_enabled"
                   default="true"
         ></Checkbox>
+
+        <!-- Capture Pacing (Zenith) -->
+        <div class="mb-3">
+          <label for="capture_pacing" class="form-label">{{ $t('config.capture_pacing') }}</label>
+          <select id="capture_pacing" class="form-select" v-model="config.capture_pacing">
+            <option value="auto">auto</option>
+            <option value="vblank">vblank</option>
+            <option value="timer">timer</option>
+          </select>
+          <div class="form-text">{{ $t('config.capture_pacing_desc') }}</div>
+        </div>
       </template>
     </PlatformLayout>
 
