@@ -11,6 +11,7 @@ name: Zenith CI
 on:
   push:
     branches: [master]
+    tags: ["v*"]
     paths-ignore:
       - "docs/**"
       - "**.md"
@@ -20,6 +21,9 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: write  # the release job attaches assets on tag push
 
 jobs:
   build-windows:
@@ -103,3 +107,38 @@ jobs:
           name: ${{ matrix.artifact }}
           path: artifacts/${{ matrix.artifact }}
           if-no-files-found: error
+
+  release:
+    name: Release
+    needs: [build, build-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Stage release assets
+        shell: bash
+        run: |
+          mkdir -p release
+          # Linux packages are one-file artifacts; the Windows artifact is a
+          # folder — pull just the user-facing installer/portable out of it.
+          find artifacts -type f \( \
+            -name "zenith-*.deb" -o \
+            -name "zenith-*.rpm" -o \
+            -name "*installer.exe" -o \
+            -name "*portable.zip" \
+          \) -exec cp {} release/ \;
+          echo "Release assets:"; ls -lh release/
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true  # flip to false to publish automatically on tag
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          files: release/*

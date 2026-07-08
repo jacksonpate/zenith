@@ -684,7 +684,10 @@ namespace config {
     {},  // output_name
 
     {
-      video_t::dd_t::config_option_e::disabled,  // configuration_option
+      // Zenith default: the streamed display becomes the only active one and
+      // matches the client mode — the Windows half of plug-and-play Headless
+      // (no-op on platforms without display-device support).
+      video_t::dd_t::config_option_e::ensure_only_display,  // configuration_option
       video_t::dd_t::resolution_option_e::automatic,  // resolution_option
       {},  // manual_resolution
       video_t::dd_t::refresh_rate_option_e::automatic,  // refresh_rate_option

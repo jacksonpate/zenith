@@ -1054,7 +1054,7 @@ editing the `conf` file in a text editor. Use the examples as reference.
     <tr>
         <td>Default</td>
         <td colspan="2">@code{}
-            disabled
+            ensure_only_display
             @endcode</td>
     </tr>
     <tr>
