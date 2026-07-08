@@ -4,7 +4,7 @@
 	branch = master
 [submodule "third-party/build-deps"]
 	path = third-party/build-deps
-	url = https://github.com/LizardByte/build-deps.git
+	url = https://github.com/jacksonpate/build-deps.git
 	branch = master
 [submodule "third-party/doxyconfig"]
 	path = third-party/doxyconfig

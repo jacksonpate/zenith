@@ -70,9 +70,11 @@ def test_nvenc_supported_thresholds():
     from zenith_display import detect
 
     assert detect.nvenc_supported("570.86.16")
-    assert detect.nvenc_supported("610.12")
-    assert not detect.nvenc_supported("550.163.01")
-    assert not detect.nvenc_supported("535.216.01")
+    assert detect.nvenc_supported("550.163.01")  # Debian 13 stable
+    assert detect.nvenc_supported("535.216.01")  # Ubuntu 24.04 GA
+    assert detect.nvenc_supported("520.56.06")   # SDK 12.0 floor
+    assert not detect.nvenc_supported("515.86.01")
+    assert not detect.nvenc_supported("470.256.02")
     assert detect.nvenc_supported("weird-vendor-string")  # never warn on guesswork
 
 
