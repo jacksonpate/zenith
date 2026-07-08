@@ -4,14 +4,8 @@ Everything touching PnP/WMI/ioctls/DisplaySwitch is exercised only on real machi
 #>
 BeforeAll {
     $script:Source = Join-Path $PSScriptRoot 'ZenithDisplay.ps1'
-    $ast = [System.Management.Automation.Language.Parser]::ParseFile($Source, [ref]$null, [ref]$null)
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:Source, [ref]$null, [ref]$null)
     $script:Functions = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)
-
-    function Import-ZenithFunction {
-        param([string]$Name)
-        $fn = $script:Functions | Where-Object Name -EQ $Name
-        Invoke-Expression $fn.Extent.Text
-    }
 }
 
 Describe 'Test-ZenithVddHardwareId' {
@@ -19,7 +13,8 @@ Describe 'Test-ZenithVddHardwareId' {
         $script:KnownVddHardwareIds = @(
             'Root\ZakoVDD', 'Root\SudoMakerVDA', 'Root\MttVDD', 'Root\Parsec\VDA', 'Root\IddSampleDriver'
         )
-        Import-ZenithFunction 'Test-ZenithVddHardwareId'
+        $fn = $script:Functions | Where-Object Name -EQ 'Test-ZenithVddHardwareId'
+        Invoke-Expression $fn.Extent.Text
     }
 
     It 'matches the bundled ZakoVDD id' {
@@ -40,7 +35,10 @@ Describe 'Test-ZenithVddHardwareId' {
 }
 
 Describe 'Get-ZenithVddIoctlCode' {
-    BeforeAll { Import-ZenithFunction 'Get-ZenithVddIoctlCode' }
+    BeforeAll {
+        $fn = $script:Functions | Where-Object Name -EQ 'Get-ZenithVddIoctlCode'
+        Invoke-Expression $fn.Extent.Text
+    }
 
     It 'computes IOCTL_VDD_COMMAND exactly as vdd_control_ioctl.h' {
         # CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_WRITE_DATA)
@@ -53,7 +51,10 @@ Describe 'Get-ZenithVddIoctlCode' {
 }
 
 Describe 'New-ZenithVddCreateCommand' {
-    BeforeAll { Import-ZenithFunction 'New-ZenithVddCreateCommand' }
+    BeforeAll {
+        $fn = $script:Functions | Where-Object Name -EQ 'New-ZenithVddCreateCommand'
+        Invoke-Expression $fn.Extent.Text
+    }
 
     It 'is bare CREATEMONITOR without a client guid' {
         New-ZenithVddCreateCommand | Should -Be 'CREATEMONITOR'
