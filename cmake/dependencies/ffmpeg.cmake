@@ -52,7 +52,7 @@ if(NOT DEFINED FFMPEG_PREPARED_BINARIES)
     endif()
 
     # Set GitHub release URL
-    set(FFMPEG_GITHUB_REPO "LizardByte/build-deps")
+    set(FFMPEG_GITHUB_REPO "jacksonpate/build-deps")
     if(FFMPEG_RELEASE_TAG)
         set(FFMPEG_RELEASE_URL "https://github.com/${FFMPEG_GITHUB_REPO}/releases/download/${FFMPEG_RELEASE_TAG}")
         set(FFMPEG_VERSION_DIR "${FFMPEG_DOWNLOAD_DIR}/ffmpeg-${FFMPEG_RELEASE_TAG}")

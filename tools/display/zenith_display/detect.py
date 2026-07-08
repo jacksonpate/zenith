@@ -103,9 +103,9 @@ def _read_bytes(path: str) -> bytes:
 
 
 # Minimum NVIDIA driver the bundled FFmpeg's nvenc accepts. Tied to the
-# third-party/nv-codec-headers pin (sdk/13.0 -> 570); older drivers make
+# build-deps nv-codec-headers pin (sdk/12.0 -> 520); older drivers make
 # Zenith fall back to CPU encoding without any visible error.
-NVENC_MIN_DRIVER = 570
+NVENC_MIN_DRIVER = 520
 
 
 def nvidia_driver_version(path: str = "/sys/module/nvidia/version") -> str:
