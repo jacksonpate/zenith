@@ -58,6 +58,43 @@ install(DIRECTORY "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/misc/firewall/"
         DESTINATION "scripts"
         COMPONENT firewall)
 
+# Zenith display autopilot: bundled virtual display driver + control tool.
+# Driver binaries are signed release artifacts fetched at configure time;
+# scripts and settings ship from the source tree. Missing payloads degrade
+# to a package without one-click VDD, never to a build failure.
+include("${CMAKE_MODULE_PATH}/packaging/windows_driver_deps.cmake")
+install(FILES "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/misc/vdd/install-vdd.bat"
+              "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/misc/vdd/uninstall-vdd.bat"
+        DESTINATION "scripts"
+        COMPONENT vdd)
+install(FILES "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/misc/vdd/driver/vdd_settings.xml"
+        DESTINATION "scripts/driver"
+        COMPONENT vdd)
+install(FILES "${CMAKE_SOURCE_DIR}/tools/display/windows/ZenithDisplay.ps1"
+        DESTINATION "scripts"
+        COMPONENT vdd)
+if(VDD_DRIVER_AVAILABLE)
+    install(FILES "${VDD_DRIVER_DIR}/ZakoVDD.dll"
+                  "${VDD_DRIVER_DIR}/ZakoVDD.inf"
+                  "${VDD_DRIVER_DIR}/zakovdd.cat"
+                  "${VDD_DRIVER_DIR}/ZakoVDD.cer"
+            DESTINATION "scripts/driver/latest"
+            COMPONENT vdd)
+endif()
+if(VDD_WIN10_DRIVER_AVAILABLE)
+    install(FILES "${VDD_WIN10_DRIVER_DIR}/ZakoVDD.dll"
+                  "${VDD_WIN10_DRIVER_DIR}/ZakoVDD.inf"
+                  "${VDD_WIN10_DRIVER_DIR}/zakovdd.cat"
+                  "${VDD_WIN10_DRIVER_DIR}/ZakoVDD.cer"
+            DESTINATION "scripts/driver/win10"
+            COMPONENT vdd)
+endif()
+if(NEFCON_AVAILABLE)
+    install(PROGRAMS "${NEFCON_DRIVER_DIR}/nefconw.exe"
+            DESTINATION "tools"
+            COMPONENT vdd)
+endif()
+
 # Sunshine assets
 install(DIRECTORY "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/assets/"
         DESTINATION "${SUNSHINE_ASSETS_DIR}"

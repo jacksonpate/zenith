@@ -37,6 +37,9 @@
 
   // _SH constants for _wfsopen()
   #include <share.h>
+
+  // GetModuleFileNameW() for SUNSHINE_ROOT
+  #include <windows.h>
 #endif
 
 namespace proc {
@@ -672,6 +675,19 @@ namespace proc {
       auto &env_vars = tree.get_child("env"s);
 
       auto this_env = boost::this_process::environment();
+
+#ifdef _WIN32
+      // $(SUNSHINE_ROOT) in apps.json = the install directory, so default
+      // apps can reference bundled scripts without hardcoding install paths
+      // (prep-cmds inherit their working dir from the executable, which for
+      // powershell.exe would be System32).
+      {
+        wchar_t module_path[MAX_PATH];
+        if (GetModuleFileNameW(nullptr, module_path, MAX_PATH) != 0) {
+          this_env["SUNSHINE_ROOT"] = std::filesystem::path(module_path).parent_path().string();
+        }
+      }
+#endif
 
       for (auto &[name, val] : env_vars) {
         this_env[name] = parse_env_val(this_env, val.get_value<std::string>());

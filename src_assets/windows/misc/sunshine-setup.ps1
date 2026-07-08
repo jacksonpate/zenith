@@ -583,6 +583,19 @@ if ($Action -eq "install") {
         -Emoji "🚀"
     Write-Information ""
 
+    # 6. Install the virtual display driver (Headless / Dual Display support)
+    $currentStep++
+    Write-Progress `
+        -Activity "Installing Sunshine" `
+        -Status "Installing virtual display driver" `
+        -PercentComplete (($currentStep / $totalSteps) * 100)
+    $installVddScript = Join-Path $RootDir "scripts\install-vdd.bat"
+    Invoke-ScriptIfExist `
+        -ScriptPath $installVddScript `
+        -Description "Installing virtual display driver" `
+        -Emoji "🖥️"
+    Write-Information ""
+
     Write-Progress -Activity "Installing Sunshine" -Completed
     Write-FramedText -Message "✓ Sunshine installation completed successfully!" -Level "Success"
 
@@ -609,7 +622,7 @@ if ($Action -eq "install") {
         -Color "Yellow"
     Write-Information ""
 
-    $totalSteps = 4
+    $totalSteps = 5
     $currentStep = 0
 
     # 1. Delete firewall rules
@@ -662,6 +675,19 @@ if ($Action -eq "install") {
         -Arguments "remove" `
         -Description "Removing from PATH" `
         -Emoji "📁"
+    Write-Information ""
+
+    # 5. Remove the virtual display driver
+    $currentStep++
+    Write-Progress `
+        -Activity "Uninstalling Sunshine" `
+        -Status "Removing virtual display driver" `
+        -PercentComplete (($currentStep / $totalSteps) * 100)
+    $uninstallVddScript = Join-Path $RootDir "scripts\uninstall-vdd.bat"
+    Invoke-ScriptIfExist `
+        -ScriptPath $uninstallVddScript `
+        -Description "Removing virtual display driver" `
+        -Emoji "🖥️"
     Write-Information ""
 
     Write-Progress -Activity "Uninstalling Sunshine" -Completed
