@@ -1250,6 +1250,8 @@ namespace nvhttp {
 
   /**
    * @brief Serve and consume an out-of-band clipboard blob (kind=3 refs).
+   * @param response HTTP response object.
+   * @param request HTTP request data from the client.
    */
   void clipboard_blob_get(resp_https_t response, req_https_t request) {
     print_req<SunshineHTTPS>(request);
@@ -1267,7 +1269,9 @@ namespace nvhttp {
   }
 
   /**
-   * @brief Accept a client-uploaded clipboard blob; replies {"id":...}.
+   * @brief Accept a client-uploaded clipboard blob; replies with its id.
+   * @param response HTTP response object.
+   * @param request HTTP request data from the client.
    */
   void clipboard_blob_post(resp_https_t response, req_https_t request) {
     print_req<SunshineHTTPS>(request);
@@ -1289,6 +1293,8 @@ namespace nvhttp {
 
   /**
    * @brief Stream a file-transfer offer's bytes from disk (kind=4 offers).
+   * @param response HTTP response object.
+   * @param request HTTP request data from the client.
    */
   void clipboard_file_get(resp_https_t response, req_https_t request) {
     print_req<SunshineHTTPS>(request);

@@ -18,7 +18,7 @@
  *
  * Payloads above kInlineThreshold move out-of-band: the frame becomes a
  * kind=3 JSON ref {"id","mime","size"} and the bytes are served/accepted on
- * the paired HTTPS server (/api/v1/clipboard/blob[/<id>]).
+ * the paired HTTPS server (`/api/v1/clipboard/blob`).
  *
  * Unlike Foundation (Windows service in session 0 + user-session GUI agent),
  * Zenith on Linux runs inside the user session and touches the clipboard
@@ -33,8 +33,11 @@
 
 namespace clipboard {
 
-  constexpr std::uint8_t kWireVersion = 1;
+  constexpr std::uint8_t kWireVersion = 1;  ///< Wire format version byte.
 
+  /**
+   * @brief Payload interpretation for a clipboard frame.
+   */
   enum class kind_e : std::uint8_t {
     text = 1,  ///< UTF-8 text, inline
     png = 2,  ///< PNG image, inline
@@ -45,8 +48,8 @@ namespace clipboard {
   /// Payload size at/above which frames switch to out-of-band blob refs.
   /// The encrypted control frame ceiling is ~65525 payload bytes.
   constexpr std::size_t kInlineThreshold = 60'000;
-  constexpr std::size_t kMaxTextBytes = 1 * 1024 * 1024;
-  constexpr std::size_t kMaxBlobBytes = 50 * 1024 * 1024;
+  constexpr std::size_t kMaxTextBytes = 1 * 1024 * 1024;  ///< Largest accepted text payload.
+  constexpr std::size_t kMaxBlobBytes = 50 * 1024 * 1024;  ///< Largest accepted blob payload.
 
   /**
    * @brief One decoded clipboard control frame.
