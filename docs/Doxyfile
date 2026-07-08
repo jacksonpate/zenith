@@ -38,6 +38,8 @@ PREDEFINED += SUNSHINE_TRAY=1
 # files and directories to process
 USE_MDFILE_AS_MAINPAGE = ../README.md
 INPUT = ../README.md \
+        ../ROADMAP.md \
+        building_zenith_local.md \
         getting_started.md \
         changelog.md \
         ../DOCKER_README.md \
