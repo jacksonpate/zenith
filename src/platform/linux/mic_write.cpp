@@ -35,6 +35,9 @@ namespace platf::pw_mic {
     constexpr std::size_t kRingCapacity = kSampleRate;
   }  // namespace
 
+  /**
+   * @brief PipeWire-backed virtual microphone ("Zenith Mic") fed by remote Opus frames.
+   */
   class pipewire_mic_t: public mic_out_t {
   public:
     ~pipewire_mic_t() override {
@@ -52,6 +55,10 @@ namespace platf::pw_mic {
       }
     }
 
+    /**
+     * @brief Create the Opus decoder and the PipeWire source stream.
+     * @return true when the virtual microphone is ready for samples.
+     */
     bool init() {
       pw_init(nullptr, nullptr);
 

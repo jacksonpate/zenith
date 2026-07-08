@@ -80,6 +80,10 @@ namespace system_tray {
     launch_ui();
   }
 
+  /**
+   * @brief Open the Zenith GitHub repository in the default browser.
+   * @param item The tray menu item that fired (unused).
+   */
   void tray_zenith_repo_cb([[maybe_unused]] struct tray_menu *item) {
     platf::open_url("https://github.com/jacksonpate/zenith");
   }
