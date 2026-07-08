@@ -111,6 +111,11 @@ set(CPACK_DEBIAN_PACKAGE_DEPENDS "\
             libx11-6, \
             miniupnpc, \
             openssl | libssl3")
+# The display autopilot's universal VDD fallback needs the evdi DKMS module and
+# userspace library. Recommends (not Depends): installed by default, but their
+# absence never blocks the package — Fedora's equivalents live in RPM Fusion,
+# so on RPM `zenith-display setup` remains the bootstrap path.
+set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "evdi-dkms, libevdi1")
 set(CPACK_RPM_PACKAGE_REQUIRES "\
             ${CPACK_RPM_PLATFORM_PACKAGE_REQUIRES} \
             libcap >= 2.22, \
