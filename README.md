@@ -20,31 +20,49 @@
 ## Why Zenith
 
 The best Sunshine forks (Apollo, Sunshine-Foundation) are Windows-only because their headline
-features are built on Windows virtual display drivers. Zenith ports the *ideas* to Linux the
-native way — PipeWire, KMS/DRM, Wayland — with NVIDIA **and** AMD as first-class citizens and
-GNOME/Wayland as the reference desktop.
+features are built on Windows virtual display drivers. Zenith ports the *ideas* everywhere — the
+native way on Linux (PipeWire, KMS/DRM, Wayland) and with a bundled signed driver on Windows —
+with NVIDIA **and** AMD as first-class citizens. Install it, pick **Headless** in Moonlight, and
+a virtual display spins up at your client's exact resolution and refresh. No extra steps.
 
+- 🖥️ **Plug-and-play virtual displays** — "Headless" and "Dual Display" apps work out of the
+  box on Linux (KDE, GNOME, Sway/wlroots, Cinnamon — via a provider chain of forced-connector,
+  compositor APIs, and a universal EVDI fallback that installs itself) and on Windows (bundled
+  signed SudoVDA driver). The virtual display is born at the client's mode, so you stream at
+  the right resolution the moment you connect. *Shipped.*
 - 🎤 **Remote microphone** — your phone's mic shows up on the host as a real input device
-  ("Zenith Mic") that Discord and games can use. Wire-compatible with the enhanced Moonlight
-  clients. *Shipped.*
-- 🖥️ **Per-client display profiles & virtual display lifecycle** — the "VDD manager" concept,
-  Linux-native. *Roadmap.*
+  ("Zenith Mic") that Discord and games can use. On by default. *Shipped.*
+- 📋 **Clipboard sync, both ways** — copy text or an image on either end, paste on the other.
+  Large payloads move over the paired TLS connection. Wire-compatible with VoidLink and the
+  Foundation-family clients. *Shipped.*
+- 📁 **File transfer to the client** — push a file from the host to your connected device.
+  *Beta.*
 - ⚡ **Present-paced capture** — KMS capture wakes on real display vblanks instead of a
   timer: measured ~16ms → ~6-9ms host latency at high res on AMD. On by default
   (`capture_pacing = auto`); NVIDIA falls back to timer pacing automatically. *Shipped.*
-- 🌈 **HDR pipeline work** — per-frame luminance metadata (MaxCLL/MaxFALL), HLG support.
-  *Roadmap.*
 
-See [ROADMAP.md](ROADMAP.md) for the full plan.
+See [ROADMAP.md](ROADMAP.md) for what's next.
 
 ## Install
 
-Grab a package from the latest [CI run artifacts](https://github.com/jacksonpate/zenith/actions/workflows/zenith-ci.yml):
-`deb` for Ubuntu/Debian/Mint, `rpm` for Fedora (x86_64 and aarch64 — including Asahi Linux on
-Apple Silicon), or build from source ([local build notes](docs/building_zenith_local.md),
-[upstream build script](scripts/linux_build.sh)). Zenith installs as a drop-in replacement for
-a packaged Sunshine: same binary path, service name, and config directory — your pairings and
-settings carry over.
+Download the [latest release](https://github.com/jacksonpate/zenith/releases/latest) for your
+platform:
+
+| Platform | Package | Notes |
+|----------|---------|-------|
+| **Windows 10/11** | `Zenith-Windows-AMD64-installer.exe` | Bundles the virtual display driver; Secure Boot stays on. |
+| **Ubuntu / Debian / Mint** | `zenith-*-amd64.deb` | `sudo apt install ./zenith-*.deb` |
+| **Fedora / Nobara / Bazzite** | `zenith-fedora-*-x86_64.rpm` | `sudo dnf install ./zenith-*.rpm` |
+| **Asahi Linux (Apple Silicon)** | `zenith-fedora-*-aarch64.rpm` | Fedora Asahi Remix. |
+
+Then open `https://<host-ip>:47990`, set a username and password, and pair Moonlight/VoidLink.
+Zenith installs as a drop-in replacement for a packaged Sunshine — same binary path, service
+name, and config directory — so an existing Sunshine's pairings and settings carry over.
+
+> **Windows SmartScreen**: the installer isn't code-signed yet, so Windows may show
+> "Windows protected your PC." Click **More info → Run anyway**.
+
+Prefer to build from source? See the [local build notes](docs/building_zenith_local.md).
 
 ## Credits & license
 
