@@ -129,7 +129,8 @@ function Send-ZenithVddIoctl {
     $path = Get-ZenithVddInterfacePath
     if (-not $path) { throw 'VDD control interface not found (driver missing or not started)' }
     # GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ|WRITE, OPEN_EXISTING
-    $handle = [ZenithVddNative]::CreateFileW($path, 0xC0000000, 3, [IntPtr]::Zero, 3, 0, [IntPtr]::Zero)
+    # ([uint32] literal: PS 5.1 parses bare 0xC0000000 as a negative Int32)
+    $handle = [ZenithVddNative]::CreateFileW($path, [uint32]'0xC0000000', 3, [IntPtr]::Zero, 3, 0, [IntPtr]::Zero)
     if ($handle.IsInvalid) { throw "could not open VDD control interface: $path" }
     try {
         $out = New-Object byte[] 4096
@@ -194,7 +195,7 @@ function Get-ZenithVddDevice {
     Get-PnpDevice -Class Display -ErrorAction SilentlyContinue |
         Where-Object {
             $ids = @($_.HardwareID) + @($_.InstanceId)
-            ($ids | Where-Object { Test-ZenithVddHardwareId $_ }).Count -gt 0
+            @($ids | Where-Object { Test-ZenithVddHardwareId $_ }).Count -gt 0
         }
 }
 
