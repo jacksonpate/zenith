@@ -8,8 +8,10 @@
  * Wayland (no data-control) reports unavailable rather than half-working.
  */
 // standard includes
+#include <algorithm>
 #include <atomic>
 #include <cstdlib>
+#include <filesystem>
 #include <thread>
 
 // lib includes
@@ -29,9 +31,42 @@ namespace platf::clipboard {
     constexpr auto kToolTimeout = 5s;
     constexpr std::size_t kMaxRead = 50 * 1024 * 1024;
 
+    /// The Wayland socket for the clipboard tools.
+    ///
+    /// Zenith frequently runs as a systemd user service whose environment has
+    /// no WAYLAND_DISPLAY even though the user's compositor is up, so fall
+    /// back to discovering the socket in XDG_RUNTIME_DIR. The value is only
+    /// ever handed to the wl-clipboard child processes: exporting it into
+    /// this process would flip the capture layer onto its Wayland path.
+    const std::string &wayland_display() {
+      static const std::string display = []() -> std::string {
+        if (auto env = std::getenv("WAYLAND_DISPLAY"); env && *env) {
+          return env;
+        }
+        auto runtime_dir = std::getenv("XDG_RUNTIME_DIR");
+        if (!runtime_dir || !*runtime_dir) {
+          return {};
+        }
+        // Prefer wayland-0, else the lowest-numbered socket present.
+        std::vector<std::string> candidates;
+        std::error_code ec;
+        for (const auto &entry : std::filesystem::directory_iterator(runtime_dir, ec)) {
+          auto name = entry.path().filename().string();
+          if (name.rfind("wayland-", 0) == 0 && name.find(".lock") == std::string::npos) {
+            candidates.push_back(std::move(name));
+          }
+        }
+        if (candidates.empty()) {
+          return {};
+        }
+        std::ranges::sort(candidates);
+        return candidates.front();
+      }();
+      return display;
+    }
+
     bool is_wayland() {
-      auto env = std::getenv("WAYLAND_DISPLAY");
-      return env && *env;
+      return !wayland_display().empty();
     }
 
     bool is_x11() {
@@ -39,9 +74,57 @@ namespace platf::clipboard {
       return env && *env;
     }
 
+    /// Child environment carrying the discovered Wayland socket.
+    bp::environment tool_env() {
+      auto env = boost::this_process::environment();
+      if (auto &display = wayland_display(); !display.empty()) {
+        env["WAYLAND_DISPLAY"] = display;
+      }
+      return env;
+    }
+
     std::string find_tool(const char *name) {
       auto path = bp::search_path(name);
       return path.empty() ? std::string {} : path.string();
+    }
+
+    /// Whether the compositor implements wlr-data-control, which `wl-paste
+    /// --watch` needs to observe clipboard changes. KDE, Sway and Hyprland do;
+    /// GNOME/Mutter does not, so those hosts fall back to polling.
+    ///
+    /// `wl-paste --watch` prints its complaint and still exits 0 on an
+    /// unsupported compositor, so probe by checking stderr rather than the
+    /// exit status.
+    bool has_data_control() {
+      static const bool supported = []() {
+        try {
+          bp::ipstream err;
+          bp::child probe(
+            std::vector<std::string> {find_tool("wl-paste"), "--watch", "true"},
+            tool_env(),
+            bp::std_out > bp::null,
+            bp::std_err > err
+          );
+          // The complaint, if any, is printed immediately; a supported
+          // compositor keeps the process alive instead.
+          std::this_thread::sleep_for(500ms);
+          bool alive = probe.running();
+          probe.terminate();
+          probe.wait();
+          if (alive) {
+            return true;
+          }
+          std::string line;
+          std::getline(err, line);
+          if (line.find("data-control") != std::string::npos) {
+            BOOST_LOG(info) << "clipboard: compositor lacks wlr-data-control; polling for changes"sv;
+          }
+          return false;
+        } catch (const std::exception &) {
+          return false;
+        }
+      }();
+      return supported;
     }
 
     /// Run `argv`, feed `input` to stdin when non-null, capture stdout.
@@ -50,7 +133,7 @@ namespace platf::clipboard {
       try {
         bp::pipe out_pipe;
         bp::opstream in_stream;
-        bp::child proc(argv, bp::std_out > out_pipe, bp::std_err > bp::null, bp::std_in < in_stream);
+        bp::child proc(argv, tool_env(), bp::std_out > out_pipe, bp::std_err > bp::null, bp::std_in < in_stream);
 
         if (input) {
           in_stream.write((const char *) input->data(), input->size());
@@ -160,13 +243,14 @@ namespace platf::clipboard {
     }
     w.cb = std::move(cb);
 
-    if (is_wayland()) {
+    if (is_wayland() && has_data_control()) {
       // `wl-paste --watch CMD` runs CMD on every clipboard change; a pipe on
       // its stdout turns each change into one line we can block on.
       try {
         auto out_pipe = std::make_shared<bp::pipe>();
         w.child = std::make_unique<bp::child>(
           std::vector<std::string> {find_tool("wl-paste"), "--watch", "echo", "x"},
+          tool_env(),
           bp::std_out > *out_pipe,
           bp::std_err > bp::null
         );
@@ -189,7 +273,9 @@ namespace platf::clipboard {
       }
     }
 
-    if (is_x11()) {
+    // X11, and Wayland compositors without wlr-data-control (GNOME/Mutter):
+    // poll the clipboard and hash it to spot changes.
+    if (is_wayland() || is_x11()) {
       w.thread = std::thread([]() {
         std::array<std::uint8_t, SHA256_DIGEST_LENGTH> last {};
         while (watcher().running) {
