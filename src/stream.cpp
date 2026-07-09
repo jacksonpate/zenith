@@ -1197,8 +1197,9 @@ namespace stream {
     });
 
     server->map(packetTypes[IDX_CLIPBOARD], [](session_t *session, const std::string_view &payload) {
-      BOOST_LOG(debug) << "type [IDX_CLIPBOARD]"sv;
+      BOOST_LOG(info) << "clipboard: received "sv << payload.size() << " bytes from the client"sv;
       if (!clipboard::available()) {
+        BOOST_LOG(warning) << "clipboard: dropping client payload — sync unavailable on this host"sv;
         return;
       }
       clipboard::on_inbound((const std::uint8_t *) payload.data(), payload.size());
