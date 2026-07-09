@@ -1272,18 +1272,37 @@ namespace platf {
    * are never advertised.
    */
   namespace clipboard {
-    /// Whether this platform/session can read and write the clipboard.
+    /**
+     * @brief Whether this platform/session can read and write the clipboard.
+     * @return True when a working backend is present.
+     */
     bool available();
 
-    /// Start invoking `cb` on local clipboard changes. Returns false when
-    /// watching cannot be established.
+    /**
+     * @brief Start invoking a callback on local clipboard changes.
+     * @param cb Invoked once per observed clipboard change.
+     * @return True when watching was established.
+     */
     bool start_watch(std::function<void()> cb);
+
+    /**
+     * @brief Stop watching for local clipboard changes.
+     */
     void stop_watch();
 
-    /// Read the current clipboard: image/png preferred, else UTF-8 text.
+    /**
+     * @brief Read the current clipboard content.
+     * @return An (mime, bytes) pair — image/png preferred, else UTF-8 text —
+     *         or std::nullopt when the clipboard is empty or unreadable.
+     */
     std::optional<std::pair<std::string, std::vector<std::uint8_t>>> read();
 
-    /// Replace the clipboard content with `bytes` of `mime`.
+    /**
+     * @brief Replace the clipboard content.
+     * @param mime MIME type of @p bytes.
+     * @param bytes The new clipboard content.
+     * @return True when the clipboard was updated.
+     */
     bool write(const std::string &mime, const std::vector<std::uint8_t> &bytes);
   }  // namespace clipboard
 
