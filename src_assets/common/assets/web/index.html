@@ -8,7 +8,7 @@
 <body id="app" v-cloak>
   <Navbar></Navbar>
   <div id="content" class="container">
-    <h1 class="my-4">{{ $t('index.welcome') }}</h1>
+    <h1 class="my-4">{{ username ? $t('index.welcome_user', { username }) : $t('index.welcome') }}</h1>
     <p>{{ $t('index.description') }}</p>
 
     <!-- Fatal Errors Alert -->
@@ -178,6 +178,7 @@
         platform: "",
         controllerEnabled: false,
         vigembus: null,
+        username: "",
       }
     },
     async created() {
@@ -185,6 +186,7 @@
         let config = await fetch("./api/config").then((r) => r.json());
         this.notifyPreReleases = config.notify_pre_releases;
         this.platform = config.platform;
+        this.username = config.username || "";
         this.controllerEnabled = config.controller !== "disabled";
         this.version = new SunshineVersion(null, config.version);
         console.log("Version: ", this.version.version)
