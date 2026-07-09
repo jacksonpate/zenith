@@ -746,32 +746,37 @@ namespace config {
   /**
    * @brief Default input configuration values used before file and CLI overrides.
    */
+  // Designated initializers: this aggregate silently value-initialized its
+  // trailing members when a field was added without a matching value, which
+  // is how key_rightalt_to_key_win became on-by-default and native_pen_touch
+  // off-by-default. Naming every member makes that class of bug impossible.
   input_t input {
-    {
+    .keybindings = {
       {0x10, 0xA0},
       {0x11, 0xA2},
       {0x12, 0xA4},
     },
-    -1ms,  // back_button_timeout
-    500ms,  // key_repeat_delay
-    std::chrono::duration<double> {1 / 24.9},  // key_repeat_period
+    .back_button_timeout = -1ms,
+    .key_repeat_delay = 500ms,
+    .key_repeat_period = std::chrono::duration<double> {1 / 24.9},
 
-    {
+    .gamepad = {
       platf::supported_gamepads(nullptr).front().name.data(),
       platf::supported_gamepads(nullptr).front().name.size(),
-    },  // Default gamepad
-    true,  // back as touchpad click enabled (manual DS4 only)
-    true,  // client gamepads with motion events are emulated as DS4
-    true,  // client gamepads with touchpads are emulated as DS4
-    true,  // ds5_inputtino_randomize_mac
+    },
+    .ds4_back_as_touchpad_click = true,
+    .motion_as_ds4 = true,
+    .touchpad_as_ds4 = true,
+    .ds5_inputtino_randomize_mac = true,
 
-    true,  // keyboard enabled
-    true,  // mouse enabled
-    true,  // controller enabled
-    true,  // always send scancodes
-    true,  // high resolution scrolling
-    true,  // native pen/touch support
-    true,  // clipboard_sync (Zenith) — bidirectional clipboard with capable clients
+    .keyboard = true,
+    .key_rightalt_to_key_win = false,
+    .mouse = true,
+    .controller = true,
+    .always_send_scancodes = true,
+    .high_resolution_scrolling = true,
+    .native_pen_touch = true,
+    .clipboard_sync = true,
   };
 
   /**
