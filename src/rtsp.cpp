@@ -930,6 +930,9 @@ namespace rtsp_stream {
       // clients sync into a black hole.
       if (clipboard::available()) {
         caps |= platf::platform_caps::clipboard_text | platf::platform_caps::clipboard_image;
+        BOOST_LOG(info) << "clipboard: advertising sync capability to the client"sv;
+      } else {
+        BOOST_LOG(info) << "clipboard: not advertising sync (disabled, or no clipboard tool on this host)"sv;
       }
       ss << "a=x-ss-general.featureFlags:" << caps << std::endl;
     }
