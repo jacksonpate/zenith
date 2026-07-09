@@ -688,6 +688,34 @@ editing the `conf` file in a text editor. Use the examples as reference.
     </tr>
 </table>
 
+### clipboard_sync
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Share the clipboard with capable Moonlight clients (VoidLink and other
+            Sunshine-Foundation-family apps) in both directions: text and images.
+            Large payloads move over the paired HTTPS connection.
+            @note{Currently active on Linux hosts with wl-clipboard (Wayland,
+            compositor must support wlr-data-control — KDE and wlroots do) or
+            xclip (X11) installed.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            clipboard_sync = disabled
+            @endcode</td>
+    </tr>
+</table>
+
 ### keybindings
 
 <table>

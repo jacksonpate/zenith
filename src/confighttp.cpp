@@ -29,6 +29,7 @@
 #endif
 
 // local includes
+#include "clipboard.h"
 #include "config.h"
 #include "confighttp.h"
 #include "crypto.h"
@@ -1409,6 +1410,50 @@ namespace confighttp {
   }
 
   /**
+   * @brief Send a host file to the connected client(s) as a file-transfer
+   *        offer (clipboard kind=4). The client fetches the bytes over the
+   *        paired HTTPS connection.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/clipboard/send-file| POST| {"path":"/home/me/photo.jpg"}}
+   */
+  void sendFileToClient(const resp_https_t &response, const req_https_t &request) {
+    if (!check_content_type(response, request, "application/json")) {
+      return;
+    }
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    std::string client_id = get_client_id(request);
+    if (!validate_csrf_token(response, request, client_id)) {
+      return;
+    }
+
+    print_req(request);
+
+    std::stringstream ss;
+    ss << request->content.rdbuf();
+    try {
+      nlohmann::json input_tree = nlohmann::json::parse(ss);
+      const std::string path = input_tree.value("path", "");
+
+      auto offer = clipboard::offer_file(path);
+      if (offer.empty()) {
+        bad_request(response, request, "path is not a readable file");
+        return;
+      }
+      nlohmann::json output_tree = nlohmann::json::parse(offer);
+      output_tree["status"] = true;
+      send_response(response, output_tree);
+    } catch (std::exception &e) {
+      BOOST_LOG(warning) << "SendFileToClient: "sv << e.what();
+      bad_request(response, request, e.what());
+    }
+  }
+
+  /**
    * @brief Reset the display device persistence.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
@@ -1821,6 +1866,7 @@ namespace confighttp {
     server.resource["^/api/browse$"]["GET"] = browseDirectory;
     server.resource["^/api/apps$"]["GET"] = getApps;
     server.resource["^/api/apps$"]["POST"] = saveApp;
+    server.resource["^/api/clipboard/send-file$"]["POST"] = sendFileToClient;
     server.resource["^/api/apps/([0-9]+)$"]["DELETE"] = deleteApp;
     server.resource["^/api/apps/close$"]["POST"] = closeApp;
     server.resource["^/api/clients/list$"]["GET"] = getClients;

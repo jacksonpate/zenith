@@ -22,6 +22,7 @@ extern "C" {
 #include <boost/bind.hpp>
 
 // local includes
+#include "clipboard.h"
 #include "config.h"
 #include "globals.h"
 #include "input.h"
@@ -922,7 +923,16 @@ namespace rtsp_stream {
     std::stringstream ss;
 
     // Tell the client about our supported features
-    ss << "a=x-ss-general.featureFlags:" << (uint32_t) platf::get_capabilities() << std::endl;
+    {
+      auto caps = (uint32_t) platf::get_capabilities();
+      // Advertise clipboard sync only when configured on AND this platform
+      // can actually reach the clipboard; a dead capability would make
+      // clients sync into a black hole.
+      if (clipboard::available()) {
+        caps |= platf::platform_caps::clipboard_text | platf::platform_caps::clipboard_image;
+      }
+      ss << "a=x-ss-general.featureFlags:" << caps << std::endl;
+    }
 
     // Always request new control stream encryption if the client supports it
     uint32_t encryption_flags_supported = SS_ENC_CONTROL_V2 | SS_ENC_AUDIO;

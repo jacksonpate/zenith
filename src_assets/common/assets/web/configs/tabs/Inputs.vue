@@ -181,6 +181,14 @@ const config = ref(props.config)
               v-model="config.native_pen_touch"
               default="true"
     ></Checkbox>
+
+    <!-- Clipboard sync (Zenith) -->
+    <Checkbox class="mb-3"
+              id="clipboard_sync"
+              locale-prefix="config"
+              v-model="config.clipboard_sync"
+              default="true"
+    ></Checkbox>
   </div>
 </template>
 

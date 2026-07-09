@@ -382,6 +382,15 @@ namespace platf {
      * @brief Capability bit indicating controller touchpad support.
      */
     constexpr caps_t controller_touch = 0x02;  // Controller touch events
+    /**
+     * @brief Capability bit advertising clipboard text sync
+     *        (Sunshine-Foundation ecosystem value; see src/clipboard.h).
+     */
+    constexpr caps_t clipboard_text = 0x04;
+    /**
+     * @brief Capability bit advertising clipboard image sync.
+     */
+    constexpr caps_t clipboard_image = 0x08;
   };  // namespace platform_caps
 
   /**
@@ -1254,6 +1263,48 @@ namespace platf {
    * @return Capability flags.
    */
   platform_caps::caps_t get_capabilities();
+
+  /**
+   * @brief Host clipboard access for the sync engine (src/clipboard.h).
+   *
+   * Linux implements this in-session via wl-clipboard/xclip; platforms
+   * without an implementation report unavailable and the capability bits
+   * are never advertised.
+   */
+  namespace clipboard {
+    /**
+     * @brief Whether this platform/session can read and write the clipboard.
+     * @return True when a working backend is present.
+     */
+    bool available();
+
+    /**
+     * @brief Start invoking a callback on local clipboard changes.
+     * @param cb Invoked once per observed clipboard change.
+     * @return True when watching was established.
+     */
+    bool start_watch(std::function<void()> cb);
+
+    /**
+     * @brief Stop watching for local clipboard changes.
+     */
+    void stop_watch();
+
+    /**
+     * @brief Read the current clipboard content.
+     * @return An (mime, bytes) pair — image/png preferred, else UTF-8 text —
+     *         or std::nullopt when the clipboard is empty or unreadable.
+     */
+    std::optional<std::pair<std::string, std::vector<std::uint8_t>>> read();
+
+    /**
+     * @brief Replace the clipboard content.
+     * @param mime MIME type of @p bytes.
+     * @param bytes The new clipboard content.
+     * @return True when the clipboard was updated.
+     */
+    bool write(const std::string &mime, const std::vector<std::uint8_t> &bytes);
+  }  // namespace clipboard
 
   constexpr auto SERVICE_NAME = "Sunshine";  ///< mDNS service instance name advertised for GameStream discovery.
   constexpr auto SERVICE_TYPE = "_nvstream._tcp";  ///< mDNS service type advertised for GameStream discovery.
