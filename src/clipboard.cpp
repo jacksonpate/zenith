@@ -164,6 +164,8 @@ namespace clipboard {
         frame.kind = kind_e::ref;
         frame.payload.assign(text.begin(), text.end());
       }
+      BOOST_LOG(info) << "clipboard: queued local change kind="sv << (int) frame.kind
+                      << " bytes="sv << frame.payload.size();
       eng.outbound.emplace_back(encode(frame));
     }
 
@@ -215,18 +217,30 @@ namespace clipboard {
   }
 
   bool available() {
-    return config::input.clipboard_sync && platf::clipboard::available();
+    if (!config::input.clipboard_sync) {
+      return false;
+    }
+    return platf::clipboard::available();
   }
 
   void start() {
     auto &eng = engine();
     std::lock_guard lg(eng.mtx);
-    if (eng.watching || !config::input.clipboard_sync) {
+    if (eng.watching) {
+      return;
+    }
+    if (!config::input.clipboard_sync) {
+      BOOST_LOG(info) << "clipboard: sync disabled by configuration"sv;
       return;
     }
     eng.watching = platf::clipboard::start_watch([]() {
       queue_local_clipboard();
     });
+    if (eng.watching) {
+      BOOST_LOG(info) << "clipboard: watching the local clipboard for changes"sv;
+    } else {
+      BOOST_LOG(warning) << "clipboard: could not watch the local clipboard; host-to-client sync is off"sv;
+    }
   }
 
   void stop() {
@@ -242,6 +256,10 @@ namespace clipboard {
 
   void on_inbound(const std::uint8_t *data, std::size_t size) {
     auto frame = decode(data, size);
+    if (frame) {
+      BOOST_LOG(info) << "clipboard: inbound frame kind="sv << (int) frame->kind
+                      << " bytes="sv << frame->payload.size();
+    }
     if (!frame) {
       BOOST_LOG(warning) << "clipboard: dropping malformed inbound frame ("sv << size << " bytes)"sv;
       return;
