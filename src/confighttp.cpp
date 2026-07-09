@@ -1044,6 +1044,9 @@ namespace confighttp {
     output_tree["status"] = true;
     output_tree["platform"] = SUNSHINE_PLATFORM;
     output_tree["version"] = PROJECT_VERSION;
+    // The web UI greets the signed-in user by name; this endpoint is
+    // authenticated, so the username is not exposed to anonymous callers.
+    output_tree["username"] = config::sunshine.username;
 
     auto vars = config::parse_config(file_handler::read_file(config::sunshine.config_file.c_str()));
 
