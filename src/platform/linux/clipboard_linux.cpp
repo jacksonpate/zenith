@@ -88,6 +88,45 @@ namespace platf::clipboard {
       return path.empty() ? std::string {} : path.string();
     }
 
+    /// Whether the compositor implements wlr-data-control, which `wl-paste
+    /// --watch` needs to observe clipboard changes. KDE, Sway and Hyprland do;
+    /// GNOME/Mutter does not, so those hosts fall back to polling.
+    ///
+    /// `wl-paste --watch` prints its complaint and still exits 0 on an
+    /// unsupported compositor, so probe by checking stderr rather than the
+    /// exit status.
+    bool has_data_control() {
+      static const bool supported = []() {
+        try {
+          bp::ipstream err;
+          bp::child probe(
+            std::vector<std::string> {find_tool("wl-paste"), "--watch", "true"},
+            tool_env(),
+            bp::std_out > bp::null,
+            bp::std_err > err
+          );
+          // The complaint, if any, is printed immediately; a supported
+          // compositor keeps the process alive instead.
+          std::this_thread::sleep_for(500ms);
+          bool alive = probe.running();
+          probe.terminate();
+          probe.wait();
+          if (alive) {
+            return true;
+          }
+          std::string line;
+          std::getline(err, line);
+          if (line.find("data-control") != std::string::npos) {
+            BOOST_LOG(info) << "clipboard: compositor lacks wlr-data-control; polling for changes"sv;
+          }
+          return false;
+        } catch (const std::exception &) {
+          return false;
+        }
+      }();
+      return supported;
+    }
+
     /// Run `argv`, feed `input` to stdin when non-null, capture stdout.
     /// Returns false on spawn failure, nonzero exit, or output overflow.
     bool exec_capture(const std::vector<std::string> &argv, const std::vector<std::uint8_t> *input, std::vector<std::uint8_t> &output) {
@@ -204,7 +243,7 @@ namespace platf::clipboard {
     }
     w.cb = std::move(cb);
 
-    if (is_wayland()) {
+    if (is_wayland() && has_data_control()) {
       // `wl-paste --watch CMD` runs CMD on every clipboard change; a pipe on
       // its stdout turns each change into one line we can block on.
       try {
@@ -234,7 +273,9 @@ namespace platf::clipboard {
       }
     }
 
-    if (is_x11()) {
+    // X11, and Wayland compositors without wlr-data-control (GNOME/Mutter):
+    // poll the clipboard and hash it to spot changes.
+    if (is_wayland() || is_x11()) {
       w.thread = std::thread([]() {
         std::array<std::uint8_t, SHA256_DIGEST_LENGTH> last {};
         while (watcher().running) {
