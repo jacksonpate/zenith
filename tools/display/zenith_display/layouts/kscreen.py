@@ -8,7 +8,7 @@ the client's refresh -> 120 -> 60 -> the output's preferred mode.
 from __future__ import annotations
 
 import json
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 from ..modes import Mode
 from . import LayoutBackend, OutputState
@@ -127,6 +127,18 @@ class KScreenBackend(LayoutBackend):
         ]
         args += self._set_mode_args(vdd, mode, self._vdd_modes(vdd))
         self.runner.run(["kscreen-doctor", *args], timeout=15, check=True)
+
+    def relight(self, vdds: Iterable[str] = ()) -> None:
+        outs = self.outputs()
+        monitors = [o for o in outs if o.connected and o.name not in vdds]
+        if not monitors:
+            return  # nothing real to fall back to — never blank the only display
+        # kscreen keeps an output's mode and position while it is disabled, so
+        # a bare .enable puts it back where it was.
+        args = [f"output.{o.name}.enable" for o in monitors if not o.enabled]
+        args += [f"output.{o.name}.disable" for o in outs if o.name in vdds and o.enabled]
+        if args:
+            self.runner.run(["kscreen-doctor", *args], timeout=15, check=True)
 
     def restore(self, payload: dict) -> None:
         args: List[str] = []

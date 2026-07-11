@@ -110,6 +110,27 @@ def test_dual_puts_the_vdd_past_the_baseline_not_on_top_of_it(fixture_text):
     assert "output.DP-1.position.1936,0" in joined  # 16 + 1920 logical px
 
 
+def test_relight_restores_a_plain_desktop(fixture_text):
+    """The last resort when the snapshot is gone or was poison: monitors back
+    on, and the orphaned VDD off — nothing else will ever take it down."""
+    backend = _backend_after_headless(fixture_text)
+    backend.relight({"DP-1"})
+    joined = " ".join(backend.runner.trace[-1])
+    assert "output.eDP-1.enable" in joined
+    assert "output.HDMI-A-1.enable" in joined
+    assert "output.DP-1.disable" in joined
+    assert "output.DP-1.enable" not in joined  # ("eDP-1" contains "DP-1" — match on the full arg)
+
+
+def test_relight_never_blanks_the_only_display(fixture_text):
+    """A box whose only output IS the VDD must be left alone, not blanked."""
+    doc = json.loads(fixture_text("kscreen_silverblue.json"))
+    doc["outputs"] = [o for o in doc["outputs"] if o["name"] == "DP-1"]
+    backend = KScreenBackend(FakeRunner({"kscreen-doctor": json.dumps(doc)}))
+    backend.relight({"DP-1"})
+    assert not any(t[0] == "kscreen-doctor" and len(t) > 2 for t in backend.runner.trace)
+
+
 def test_restore_replays_snapshot(fixture_text):
     backend = _backend(fixture_text)
     payload = json.loads(json.dumps(backend.snapshot()))  # simulate disk roundtrip

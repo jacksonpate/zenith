@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Set, Tuple
 
 from ..modes import Mode
 from ..runner import Runner
@@ -35,3 +35,6 @@ class HyprlandProvider(VddProvider):
             ["hyprctl", "output", "remove", state.get("vdd_output", _OUTPUT_NAME)],
             timeout=10,
         )
+
+    def vdd_outputs(self, env, runner: Runner) -> Set[str]:
+        return {_OUTPUT_NAME}

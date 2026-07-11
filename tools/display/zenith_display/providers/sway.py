@@ -43,3 +43,9 @@ class SwayProvider(VddProvider):
         output = state.get("vdd_output")
         if output:
             runner.run(["swaymsg", "output", output, "unplug"], timeout=10)
+
+    def vdd_outputs(self, env, runner: Runner) -> Set[str]:
+        # sway names every headless output HEADLESS-N and hands out a fresh N
+        # each time, so a VDD leaked by a crashed session is *guaranteed* not to
+        # match the current one by name. Match on what they all are instead.
+        return {n for n in self._output_names(runner) if n.startswith("HEADLESS-")}

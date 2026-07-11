@@ -7,7 +7,7 @@ so this backend also knows how to inject the client's CVT-RB mode.
 from __future__ import annotations
 
 import re
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 from ..modes import Mode, cvt_rb
 from . import LayoutBackend, OutputState
@@ -55,6 +55,7 @@ class XrandrBackend(LayoutBackend):
                     x=int(head.group("x") or 0),
                     y=int(head.group("y") or 0),
                     primary=bool(head.group("primary")),
+                    rotation=rotation,
                 )
                 rotations[current.name] = rotation
                 outs.append(current)
@@ -76,9 +77,7 @@ class XrandrBackend(LayoutBackend):
 
     def snapshot(self) -> dict:
         outputs = []
-        outs = self.outputs()
-        rotations = getattr(self, "_rotations", {})
-        for out in outs:
+        for out in self.outputs():
             if not out.connected:
                 continue
             outputs.append(
@@ -87,7 +86,7 @@ class XrandrBackend(LayoutBackend):
                     "enabled": out.enabled,
                     "mode": f"{out.width}x{out.height}" if out.enabled else None,
                     "refresh": round(out.refresh) if out.refresh else None,
-                    "rotation": rotations.get(out.name, "normal"),
+                    "rotation": out.rotation,
                     "x": out.x,
                     "y": out.y,
                     "primary": out.primary,
@@ -122,17 +121,39 @@ class XrandrBackend(LayoutBackend):
         args = ["xrandr"]
         for out in targets:
             args += ["--output", out.name]
-            if out.enabled and out.width:
-                args += ["--mode", f"{out.width}x{out.height}", "--pos", f"{out.x}x{out.y}"]
-                if out.refresh:
-                    args += ["--rate", str(round(out.refresh))]
-                if out.primary:
-                    args += ["--primary"]
-            else:
+            if not out.enabled:
                 args += ["--off"]
+                continue
+            args += ["--mode", f"{out.width}x{out.height}", "--pos", f"{out.x}x{out.y}"]
+            if out.refresh:
+                args += ["--rate", str(round(out.refresh))]
+            # An output that is off has no CRTC, so xrandr defaults it back to
+            # RR_Rotate_0 unless told otherwise — headless turned the monitor
+            # off, so without this a rotated monitor returns landscape.
+            if out.rotation != "normal":
+                args += ["--rotate", out.rotation]
+            if out.primary:
+                args += ["--primary"]
         args += ["--output", vdd, "--mode", mode_name,
                  "--pos", f"{self.rightmost_edge(targets)}x0"]
         self.runner.run(args, timeout=15, check=True)
+
+    def relight(self, vdds: Iterable[str] = ()) -> None:
+        outs = self.outputs()
+        monitors = [o for o in outs if o.connected and o.name not in vdds]
+        if not monitors:
+            return  # nothing real to fall back to — never blank the only display
+        # X forgets a disabled output's geometry entirely, so --auto (preferred
+        # mode, sensible placement) is the best guess available.
+        args = []
+        for out in monitors:
+            if not out.enabled:
+                args += ["--output", out.name, "--auto"]
+        for out in outs:
+            if out.name in vdds and out.enabled:
+                args += ["--output", out.name, "--off"]
+        if args:
+            self.runner.run(["xrandr", *args], timeout=15, check=True)
 
     def restore(self, payload: dict) -> None:
         """Replay per-output so one bad entry can't strand the whole layout."""

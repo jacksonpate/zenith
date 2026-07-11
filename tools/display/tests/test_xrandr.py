@@ -113,3 +113,105 @@ def test_restore_continues_past_one_failed_output():
     except RuntimeError as exc:
         assert "restore incomplete" in str(exc)
     assert calls["n"] >= 2  # second output was still attempted
+
+
+# --- dual entered from a headless session -----------------------------------
+#
+# The outputs are off, so X reports no geometry for them at all — only their
+# mode lists survive. Everything below starts from that state, because that is
+# where the bug lived: dual is routinely entered straight out of headless.
+
+_AFTER_HEADLESS = """\
+Screen 0: minimum 320 x 200, current 2420 x 1668, maximum 16384 x 16384
+eDP-1 connected (normal left inverted right x axis y axis) 309mm x 174mm
+   1920x1080     60.00 +
+   1280x720      59.86
+HDMI-1 connected (normal left inverted right x axis y axis) 530mm x 300mm
+   2560x1440     59.95 +
+DP-1 connected primary 2420x1668+0+0 (normal left inverted right x axis y axis) 0mm x 0mm
+   2420x1668    120.00*+
+"""
+
+_USER_LAYOUT = {"outputs": [
+    {"name": "eDP-1", "enabled": True, "mode": "1920x1080", "refresh": 60,
+     "rotation": "normal", "x": 0, "y": 0, "primary": True},
+    {"name": "HDMI-1", "enabled": True, "mode": "2560x1440", "refresh": 60,
+     "rotation": "normal", "x": 1920, "y": 0, "primary": False},
+]}
+
+
+def _after_headless():
+    return XrandrBackend(FakeRunner({"xrandr": _AFTER_HEADLESS}))
+
+
+def test_dual_relights_the_monitors_headless_turned_off():
+    backend = _after_headless()
+    backend.apply_dual("DP-1", Mode(2420, 1668, 120), _USER_LAYOUT)
+    argv = " ".join(backend.runner.trace[-1])
+    assert "--output eDP-1 --mode 1920x1080 --pos 0x0" in argv
+    assert "--output HDMI-1 --mode 2560x1440 --pos 1920x0" in argv
+    assert "--output DP-1 --mode zvdd_2420x1668_120 --pos 4480x0" in argv
+
+
+def test_dual_gives_the_primary_back_to_the_user():
+    """apply_headless hands --primary to the VDD; dual must take it back, or
+    menus and new windows keep opening on the streamed head."""
+    backend = _after_headless()
+    backend.apply_dual("DP-1", Mode(2420, 1668, 120), _USER_LAYOUT)
+    argv = " ".join(backend.runner.trace[-1])
+    assert "--output eDP-1 --mode 1920x1080 --pos 0x0 --rate 60 --primary" in argv
+
+
+def test_dual_without_a_baseline_still_relights_them():
+    """The fallback used to be a no-op: X reports width=0 for an output that is
+    off, so every monitor was skipped and dual came out identical to headless."""
+    backend = _after_headless()
+    backend.apply_dual("DP-1", Mode(2420, 1668, 120))
+    argv = " ".join(backend.runner.trace[-1])
+    assert "--output eDP-1 --mode 1920x1080" in argv   # its own preferred mode
+    assert "--output HDMI-1 --mode 2560x1440" in argv
+    assert "--off" not in argv
+
+
+def test_dual_puts_a_rotated_monitor_back_on_its_side():
+    """An output that is off has no CRTC, so xrandr silently resets it to
+    RR_Rotate_0 unless told otherwise — the monitor came back landscape."""
+    baseline = {"outputs": [
+        dict(_USER_LAYOUT["outputs"][0]),
+        {"name": "HDMI-1", "enabled": True, "mode": "2560x1440", "refresh": 60,
+         "rotation": "left", "x": 1920, "y": 0, "primary": False},
+    ]}
+    backend = _after_headless()
+    backend.apply_dual("DP-1", Mode(2420, 1668, 120), baseline)
+    argv = " ".join(backend.runner.trace[-1])
+    assert "--rotate left" in argv
+    # ...and on its side it is 1440 wide, not 2560. Getting this wrong leaves a
+    # 1120px dead gap between the monitor and the VDD.
+    assert "--output DP-1 --mode zvdd_2420x1668_120 --pos 3360x0" in argv
+
+
+def test_dual_survives_a_monitor_that_was_unplugged_mid_session():
+    """One stale name used to take down the whole apply (single atomic xrandr
+    call, check=True) and strand the user in headless."""
+    baseline = {"outputs": _USER_LAYOUT["outputs"] + [
+        {"name": "DP-9", "enabled": True, "mode": "3840x2160", "refresh": 60, "x": 4480, "y": 0},
+    ]}
+    backend = _after_headless()
+    backend.apply_dual("DP-1", Mode(2420, 1668, 120), baseline)
+    argv = " ".join(backend.runner.trace[-1])
+    assert "DP-9" not in argv
+    assert "--output eDP-1 --mode 1920x1080" in argv
+
+
+def test_dual_falls_back_when_the_baselines_mode_is_gone():
+    """Swap the monitor and the saved mode no longer exists: `xrandr: cannot
+    find mode` would fail the whole call."""
+    baseline = {"outputs": [
+        {"name": "eDP-1", "enabled": True, "mode": "3840x2160", "refresh": 60,
+         "x": 0, "y": 0, "primary": True},
+    ]}
+    backend = _after_headless()
+    backend.apply_dual("DP-1", Mode(2420, 1668, 120), baseline)
+    argv = " ".join(backend.runner.trace[-1])
+    assert "3840x2160" not in argv
+    assert "--output eDP-1 --mode 1920x1080" in argv
