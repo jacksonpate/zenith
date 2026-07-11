@@ -236,6 +236,23 @@ def _restore_from(doc: dict, env, runner: Runner) -> None:
     live = {o.name for o in backend.outputs()}
     outputs = [o for o in doc.get("payload", {}).get("outputs", []) if o.get("name") in live]
     vdd = doc.get("vdd_output")
+
+    # Filtering can eat the only monitor the layout lit — undock the laptop and
+    # the remembered desk becomes "eDP-1: off, HDMI-A-1: <gone>", which replays
+    # as a black screen. A layout that lights nothing is not a layout to apply;
+    # it is a reason to fall back to one that does.
+    if not snapshot.is_user_layout({"outputs": outputs}):
+        log.warning("this layout lights nothing here (the monitor it named is gone) — "
+                    "bringing up what this machine actually has instead")
+        try:
+            backend.relight({vdd} if vdd else ())
+        except Exception as exc:
+            log.error("could not relight (%s)", exc)
+            return
+        if not runner.dry_run:
+            snapshot.clear()
+        return
+
     if vdd:
         outputs.append({"name": vdd, "enabled": False})
     try:

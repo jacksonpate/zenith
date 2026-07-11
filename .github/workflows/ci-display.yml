@@ -103,6 +103,40 @@ jobs:
           print("restore OK")
           '
 
+  dual-integration:
+    name: Integration (dual relights the monitors)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [sway, x11]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install the display stack
+        run: |
+          sudo apt-get update
+          if [ "${{ matrix.backend }}" = "sway" ]; then
+            sudo apt-get install -y sway wlr-randr
+          else
+            sudo apt-get install -y xserver-xorg-core xserver-xorg-video-dummy x11-xserver-utils
+          fi
+
+      - name: apply_dual() entered from a dark desk must relight it
+        run: |
+          # The regression this guards: dual only ever *added* the VDD, so
+          # entered from headless — where every monitor is off — it produced one
+          # lit display and was indistinguishable from headless.
+          #
+          # Asserted against the compositor itself, never against zenith's own
+          # output, and against apply_dual() directly: driving the CLI hides the
+          # bug on sway, whose synchronous IPC relights the monitors during the
+          # stale-snapshot restore before apply_dual ever runs.
+          export SUNSHINE_CLIENT_WIDTH=2420 SUNSHINE_CLIENT_HEIGHT=1668 SUNSHINE_CLIENT_FPS=60
+          export PYTHONPATH="$PWD/tools/display"
+          bash tools/display/tests/integration/${{ matrix.backend }}-dual.sh
+
   evdi-smoke:
     name: EVDI bootstrap smoke (best effort)
     runs-on: ubuntu-latest
