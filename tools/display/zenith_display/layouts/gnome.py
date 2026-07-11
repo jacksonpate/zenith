@@ -94,19 +94,24 @@ class GnomeBackend(LayoutBackend):
             raise RuntimeError(f"no usable mode on {vdd}")
         self._apply([self._logical(0, 0, 1.0, True, vdd, mode_id)])
 
-    def apply_dual(self, vdd: str, mode: Mode) -> None:  # pragma: no cover
+    def apply_dual(self, vdd: str, mode: Mode,
+                   baseline: Optional[dict] = None) -> None:  # pragma: no cover
+        """An output left out of ApplyMonitorsConfig is an output that is *off*,
+        so a dual entered from headless must name the user's monitors again —
+        reading them from the current state would only find the VDD."""
         monitors = self._state().unpack()[1]
         mode_id = self._mode_id(monitors, vdd, mode)
         if not mode_id:
             raise RuntimeError(f"no usable mode on {vdd}")
+        targets = self.dual_targets(vdd, baseline)
         layout = []
-        edge = 0
-        for out in self.outputs():
-            if out.enabled and out.name != vdd:
-                current = self._mode_id(monitors, out.name, None)
-                layout.append(self._logical(out.x, out.y, out.scale, out.primary, out.name, current))
-                edge = max(edge, out.x + int(out.width / (out.scale or 1.0)))
-        layout.append(self._logical(edge, 0, 1.0, False, vdd, mode_id))
+        for out in targets:
+            if not out.enabled:
+                continue  # omitted from the layout == off
+            current = self._mode_id(monitors, out.name, Mode(out.width, out.height,
+                                                             round(out.refresh) or 60))
+            layout.append(self._logical(out.x, out.y, out.scale, out.primary, out.name, current))
+        layout.append(self._logical(self.rightmost_edge(targets), 0, 1.0, False, vdd, mode_id))
         self._apply(layout)
 
     def snapshot(self) -> dict:

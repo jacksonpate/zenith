@@ -4,18 +4,24 @@ A backend controls *arrangement* of displays the compositor already knows
 about; making a new display exist at all is the providers' job.  Every
 backend implements the same small surface:
 
-    outputs()                       -> list[OutputState]
-    snapshot()                      -> JSON-safe payload for restore()
-    apply_headless(vdd, mode)       -> only the VDD stays lit
-    apply_dual(vdd, mode)           -> VDD joins to the right of everything
-    restore(payload)                -> replay a snapshot exactly
-    wait_for_output(name, timeout)  -> block until a (new) output appears
+    outputs()                        -> list[OutputState]
+    snapshot()                       -> JSON-safe payload for restore()
+    apply_headless(vdd, mode)        -> only the VDD stays lit
+    apply_dual(vdd, mode, baseline)  -> the user's layout, plus the VDD right of it
+    restore(payload)                 -> replay a snapshot exactly
+    wait_for_output(name, timeout)   -> block until a (new) output appears
+
+``apply_headless`` and ``apply_dual`` both *assert* a complete target state
+rather than nudging the current one.  That matters because they are reached in
+any order and from any starting point: dual is routinely entered straight out
+of a headless session, when every physical output is dark.  An apply that only
+adds the VDD would leave it that way — still headless.
 """
 
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import List, Optional
 
 from ..modes import Mode
@@ -55,7 +61,7 @@ class LayoutBackend:
     def apply_headless(self, vdd: str, mode: Mode) -> None:
         raise NotImplementedError
 
-    def apply_dual(self, vdd: str, mode: Mode) -> None:
+    def apply_dual(self, vdd: str, mode: Mode, baseline: Optional[dict] = None) -> None:
         raise NotImplementedError
 
     def restore(self, payload: dict) -> None:
@@ -76,6 +82,77 @@ class LayoutBackend:
                 return name_hint
             time.sleep(0.25)
         return None
+
+    def wait_for_user_layout(self, exclude: Optional[str] = None, timeout: float = 5.0) -> bool:
+        """Block until some monitor other than `exclude` is lit again.
+
+        `restore` hands the compositor a new layout and returns; the monitors
+        come back a beat later.  Anything that snapshots in that window records
+        a dark desk as the user's own layout.
+        """
+        deadline = time.monotonic() + timeout
+        while True:
+            if any(o.enabled and o.name != exclude for o in self.outputs()):
+                return True
+            if self.runner.dry_run or time.monotonic() >= deadline:
+                return self.runner.dry_run
+            time.sleep(0.25)
+
+    @staticmethod
+    def baseline_outputs(baseline: Optional[dict]) -> List[OutputState]:
+        """Read a saved snapshot payload back as `OutputState`s.
+
+        Backends record geometry differently — kscreen/gnome write a
+        ``"2560x1600@165"`` mode string, xrandr a ``"2560x1600"`` plus a
+        separate refresh, wlr plain width/height/refresh — so accept all three.
+        """
+        outs: List[OutputState] = []
+        for raw in (baseline or {}).get("outputs", []):
+            width = int(raw.get("width") or 0)
+            height = int(raw.get("height") or 0)
+            refresh = float(raw.get("refresh") or 0.0)
+            if not width:
+                geometry, _, hz = str(raw.get("mode") or "").partition("@")
+                w, _, h = geometry.partition("x")
+                try:
+                    width, height = int(w), int(h)
+                    refresh = float(hz) if hz else refresh
+                except ValueError:  # no mode recorded, or an unparseable one
+                    width = height = 0
+            outs.append(
+                OutputState(
+                    name=raw.get("name", ""),
+                    enabled=bool(raw.get("enabled")),
+                    width=width,
+                    height=height,
+                    refresh=refresh,
+                    x=raw.get("x", 0),
+                    y=raw.get("y", 0),
+                    scale=float(raw.get("scale") or 1.0),
+                    primary=bool(raw.get("primary")),
+                    priority=int(raw.get("priority") or 0),
+                )
+            )
+        return outs
+
+    def dual_targets(self, vdd: str, baseline: Optional[dict]) -> List[OutputState]:
+        """The state the non-VDD outputs must end up in for a dual session.
+
+        Prefer the saved baseline: it is the layout the user actually chose, and
+        it is the only record of it once headless has switched their monitors
+        off.  With no usable baseline, fall back to lighting every connected
+        monitor at the geometry the compositor still remembers — a dual session
+        that leaves the desk dark is worse than one that guesses.
+        """
+        from ..snapshot import is_user_layout
+
+        if is_user_layout(baseline or {}, vdd):
+            return [o for o in self.baseline_outputs(baseline) if o.name != vdd]
+        return [
+            replace(o, enabled=True)
+            for o in self.outputs()
+            if o.name != vdd and o.connected
+        ]
 
     @staticmethod
     def rightmost_edge(outputs: List[OutputState]) -> int:

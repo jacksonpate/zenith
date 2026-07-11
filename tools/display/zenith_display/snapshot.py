@@ -56,3 +56,17 @@ def clear(environ=os.environ) -> None:
         os.unlink(_path(environ))
     except OSError:
         pass
+
+
+def is_user_layout(payload: dict, vdd_output: Optional[str] = None) -> bool:
+    """True when `payload` could plausibly be a layout the user was using.
+
+    A layout with no physical output lit is one of *ours*, caught mid-teardown
+    — nobody sits in front of a dark desk.  Saving one as the restore target is
+    how a session ends with the monitors still off: every later ``restore``
+    faithfully replays the darkness.
+    """
+    for out in payload.get("outputs", []):
+        if out.get("name") != vdd_output and out.get("enabled"):
+            return True
+    return False

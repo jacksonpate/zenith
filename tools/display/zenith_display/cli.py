@@ -92,8 +92,16 @@ def _apply(kind: str, args) -> int:
     if stale and not args.dry_run:
         log.warning("stale snapshot found — restoring previous layout first")
         _restore_from(stale, env, runner)
+        # ...and let it land. Compositors reconfigure asynchronously, so the
+        # layout we are about to record as "the user's" is still the old
+        # session's for a beat — and recording a dark desk as the baseline is
+        # what leaves the monitors dark forever after.
+        backend.wait_for_user_layout(exclude=stale.get("vdd_output"))
 
     payload = backend.snapshot()
+    if not snapshot.is_user_layout(payload, stale.get("vdd_output") if stale else None):
+        log.warning("no monitor is lit — recording this as the baseline would strand them; "
+                    "dual will fall back to every connected output")
 
     provider, report = providers.choose(env, runner)
     if provider is None:
@@ -121,7 +129,7 @@ def _apply(kind: str, args) -> int:
         if kind == "headless":
             backend.apply_headless(vdd, mode)
         else:
-            backend.apply_dual(vdd, mode)
+            backend.apply_dual(vdd, mode, payload)
     except Exception as exc:  # roll back: never leave the user stranded
         log.error("apply failed (%s); rolling back", exc)
         restored = False

@@ -132,9 +132,17 @@ class WlrBackend(LayoutBackend):
             if out.name != vdd and out.enabled:
                 self._disable(out.name)
 
-    def apply_dual(self, vdd: str, mode: Mode) -> None:
-        edge = self.rightmost_edge([o for o in self.outputs() if o.name != vdd])
-        self._enable(vdd, mode, edge)
+    def apply_dual(self, vdd: str, mode: Mode, baseline: Optional[dict] = None) -> None:
+        """Relight the user's monitors, then add the VDD off the right edge —
+        entering dual from a headless session, they are all off."""
+        targets = self.dual_targets(vdd, baseline)
+        for out in targets:
+            if out.enabled and out.width:
+                self._enable(out.name, Mode(out.width, out.height, round(out.refresh) or 60),
+                             out.x, out.y)
+            elif not out.enabled:
+                self._disable(out.name)
+        self._enable(vdd, mode, self.rightmost_edge(targets))
 
     def restore(self, payload: dict) -> None:
         for out in payload.get("outputs", []):

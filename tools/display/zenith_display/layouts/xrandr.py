@@ -111,14 +111,28 @@ class XrandrBackend(LayoutBackend):
                 args += ["--output", out.name, "--off"]
         self.runner.run(args, timeout=15, check=True)
 
-    def apply_dual(self, vdd: str, mode: Mode) -> None:
+    def apply_dual(self, vdd: str, mode: Mode, baseline: Optional[dict] = None) -> None:
+        """Restate the user's monitors, then add the VDD off the right edge.
+
+        Coming out of headless they are all ``--off`` (and the VDD holds
+        ``--primary``), so dual has to put them back rather than assume them.
+        """
         mode_name = self.ensure_mode(vdd, mode)
-        edge = self.rightmost_edge([o for o in self.outputs() if o.name != vdd])
-        self.runner.run(
-            ["xrandr", "--output", vdd, "--mode", mode_name, "--pos", f"{edge}x0"],
-            timeout=15,
-            check=True,
-        )
+        targets = self.dual_targets(vdd, baseline)
+        args = ["xrandr"]
+        for out in targets:
+            args += ["--output", out.name]
+            if out.enabled and out.width:
+                args += ["--mode", f"{out.width}x{out.height}", "--pos", f"{out.x}x{out.y}"]
+                if out.refresh:
+                    args += ["--rate", str(round(out.refresh))]
+                if out.primary:
+                    args += ["--primary"]
+            else:
+                args += ["--off"]
+        args += ["--output", vdd, "--mode", mode_name,
+                 "--pos", f"{self.rightmost_edge(targets)}x0"]
+        self.runner.run(args, timeout=15, check=True)
 
     def restore(self, payload: dict) -> None:
         """Replay per-output so one bad entry can't strand the whole layout."""
