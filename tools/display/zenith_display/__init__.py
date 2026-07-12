@@ -2,7 +2,7 @@
 
 Plug-and-play virtual display (VDD) management for Zenith hosts.
 
-The autopilot turns "Headless" and "Dual Display" from hand-rolled per-machine
+The autopilot turns "Headless" and "Extend" from hand-rolled per-machine
 scripts into a zero-configuration feature:
 
     detect  -> fingerprint the session (X11/Wayland, DE, tools, DRM state)

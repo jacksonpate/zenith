@@ -18,7 +18,7 @@
       "image-path": "desktop.png"
     },
     {
-      "name": "Dual Display",
+      "name": "Extend",
       "prep-cmd": [
         {
           "do": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$(SUNSHINE_ROOT)\\scripts\\ZenithDisplay.ps1\" dual",

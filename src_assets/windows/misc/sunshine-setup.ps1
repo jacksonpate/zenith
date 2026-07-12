@@ -583,7 +583,7 @@ if ($Action -eq "install") {
         -Emoji "🚀"
     Write-Information ""
 
-    # 6. Install the virtual display driver (Headless / Dual Display support)
+    # 6. Install the virtual display driver (Headless / Extend support)
     $currentStep++
     Write-Progress `
         -Activity "Installing Sunshine" `

@@ -3,7 +3,9 @@
     zenith-display probe            machine-readable environment fingerprint
     zenith-display plan             what would happen, changes nothing
     zenith-display headless         only the VDD stays lit, at the client mode
-    zenith-display dual             VDD joins as one more monitor
+    zenith-display dual             the VDD joins the desk as one more monitor
+                                    (the "Extend" app; with two real monitors it
+                                    is the third, hence not "dual" anything)
     zenith-display restore          tear down the VDD, replay the snapshot
     zenith-display remember         pin the desk as it is now as the layout to
                                     come back to (learned automatically too)

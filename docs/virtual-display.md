@@ -56,7 +56,7 @@ virtual display at the connecting client's exact resolution and refresh
 the stream ends.
 
 - **Headless**: your real monitors turn off; the VDD becomes the only display.
-- **Dual Display**: the VDD appears as an extra monitor to the right of your
+- **Extend**: the VDD appears as an extra monitor to the right of your
   real layout.
 - **Quit the app in Moonlight**: your pre-session layout comes back and the
   VDD goes dark. Crash-safe: a stale snapshot is restored on the next run.
@@ -89,7 +89,7 @@ app's environment (or Zenith's global env) to match.
 The Windows installer bundles the SudoVDA indirect display driver (SudoMaker,
 MIT/CC0) and installs it during setup — its certificate goes into the Root and
 TrustedPublisher stores, which is sufficient for a UMDF driver on stock
-Windows: no test mode, Secure Boot stays on. **Headless** and **Dual Display**
+Windows: no test mode, Secure Boot stays on. **Headless** and **Extend**
 work out of the box: the default apps run `scripts\ZenithDisplay.ps1`, which
 creates the virtual monitor **at the exact client resolution/refresh**
 (SudoVDA's ADD ioctl takes the mode directly) and destroys it on session end.

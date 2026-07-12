@@ -19,7 +19,7 @@
       ]
     },
     {
-      "name": "Dual Display",
+      "name": "Extend",
       "image-path": "desktop.png",
       "prep-cmd": [
         {
