@@ -69,6 +69,35 @@ def _connector_names() -> set:
     return {c.name for c in scan_connectors()}
 
 
+def _card_connectors(card: int) -> list:
+    """(connector name, status) for one evdi card."""
+    found = []
+    for path in sorted(glob.glob(f"/sys/class/drm/card{card}-*")):
+        name = os.path.basename(path).split("-", 1)[1]  # card1-DVI-I-1 -> DVI-I-1
+        try:
+            with open(os.path.join(path, "status"), encoding="utf-8") as fh:
+                found.append((name, fh.read().strip()))
+        except OSError:
+            found.append((name, "unknown"))
+    return found
+
+
+def _connected_connector(card: int) -> Optional[str]:
+    return next((n for n, status in _card_connectors(card) if status == "connected"), None)
+
+
+def _idle_evdi_cards() -> list:
+    """EVDI cards that exist but have nothing plugged into them.
+
+    An evdi card cannot be removed individually — the module only offers
+    ``remove_all``, which would also yank a user's real DisplayLink dock — so a
+    card added for a session outlives it.  Adding a fresh one per session grows
+    the list without bound (a day of streaming leaves dozens behind); an idle
+    one is exactly as good as a new one, so take that instead.
+    """
+    return [card for card in _evdi_cards() if _connected_connector(card) is None]
+
+
 class EvdiProvider(VddProvider):
     name = "evdi"
     description = "EVDI virtual DRM display (universal fallback)"
@@ -153,21 +182,24 @@ class EvdiProvider(VddProvider):
             fh.write(edid_bytes)
 
         cards_before = set(_evdi_cards())
-        connectors_before = _connector_names()
 
-        add_cmd = ["sh", "-c", f"echo 1 > {_ADD_PATH}"]
-        if not _add_writable():
-            add_cmd = self._root_wrap(env, add_cmd)
-        runner.run(add_cmd, timeout=10, check=True)
+        # An evdi card outlives the session that made it — the module has no
+        # per-device remove — so take an idle one back rather than minting
+        # another. Otherwise every stream leaves a card behind for good.
+        card = next(iter(_idle_evdi_cards()), None)
+        if card is None:
+            add_cmd = ["sh", "-c", f"echo 1 > {_ADD_PATH}"]
+            if not _add_writable():
+                add_cmd = self._root_wrap(env, add_cmd)
+            runner.run(add_cmd, timeout=10, check=True)
 
-        card = None
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline and card is None:
-            new = sorted(set(_evdi_cards()) - cards_before)
-            if new:
-                card = new[0]
-            else:
-                time.sleep(0.2)
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and card is None:
+                new = sorted(set(_evdi_cards()) - cards_before)
+                if new:
+                    card = new[0]
+                else:
+                    time.sleep(0.2)
         if card is None:
             if runner.dry_run:
                 return "DVI-I-"
@@ -177,17 +209,21 @@ class EvdiProvider(VddProvider):
         self._spawn_holder(env, runner, card, edid_path, pidfile,
                            area=mode.width * mode.height)
 
-        # Identify OUR connector by diffing sysfs — never match a
-        # pre-existing physical output by name prefix.
+        # Watch OUR card's own connectors for one coming up. Diffing sysfs for a
+        # *newly appeared* name would be wrong twice over: a recycled card's
+        # connector already exists (merely disconnected, so nothing new ever
+        # appears and a working display reads as a failure), and a monitor
+        # plugged in at the wrong moment would be mistaken for ours.
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
-            new_connectors = sorted(_connector_names() - connectors_before)
-            if new_connectors:
-                return new_connectors[0]
+            connector = _connected_connector(card)
+            if connector:
+                return connector
             time.sleep(0.25)
         if runner.dry_run:
             return "DVI-I-"
-        raise RuntimeError("evdi connector never appeared (holder failed to connect?)")
+        raise RuntimeError(f"evdi card{card} never reported a connected output "
+                           "(the holder could not attach the EDID)")
 
     def destroy(self, env, runner: Runner, state: dict) -> None:
         pidfile = os.path.join(state_dir(), "evdi-hold.pid")
@@ -212,4 +248,14 @@ class EvdiProvider(VddProvider):
                 os.unlink(pidfile)
             except OSError:
                 pass
+            # Wait for the connector to actually drop. The kernel unplugs it a
+            # beat after the holder dies, and a card whose connector still reads
+            # "connected" does not look idle — so the next session concludes it
+            # has none to recycle and adds another, which is the leak all over
+            # again, just slower.
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                if not any(_connected_connector(c) for c in _evdi_cards()):
+                    break
+                time.sleep(0.1)
         # On failure the pidfile is kept so a later (privileged) restore can retry.

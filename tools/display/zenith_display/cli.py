@@ -140,6 +140,12 @@ def _apply(kind: str, args) -> int:
         log.error("provider %s could not create a VDD: %s", provider.name, exc)
         return _degrade(args, EXIT_APPLY_FAILED, "VDD creation failed")
 
+    # The provider made a display; the session may still need to adopt it. On
+    # X11 a new DRM card is inert until it is sourced from the GPU, so without
+    # this the display exists, the kernel has it, and nothing can see it.
+    if not args.dry_run:
+        backend.attach_new_outputs()
+
     vdd = backend.wait_for_output(hint) if not args.dry_run else hint
     if vdd is None:
         log.error("VDD (hint %r) never appeared in %s", hint, backend.name)

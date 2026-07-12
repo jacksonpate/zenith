@@ -2,15 +2,25 @@
 
 Unlike Wayland backends, X11 can attach a brand-new modeline to any output,
 so this backend also knows how to inject the client's CVT-RB mode.
+
+It also has to do something no Wayland compositor needs: *adopt* a virtual
+display once a provider has made one.  A Wayland compositor picks up a new DRM
+card by itself; X11 does not.  It sees the card, lists it as a PRIME provider —
+and leaves its outputs invisible to `xrandr -q` until they are explicitly
+sourced from the primary GPU.  Without that step evdi, the only provider a
+stock machine has, produces a display the session can never see.
 """
 
 from __future__ import annotations
 
+import logging
 import re
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Tuple
 
 from ..modes import Mode, cvt_rb
 from . import LayoutBackend, OutputState
+
+log = logging.getLogger("zenith-display")
 
 _HEAD_RE = re.compile(
     r"^(?P<name>\S+) (?P<status>connected|disconnected)"
@@ -19,8 +29,13 @@ _HEAD_RE = re.compile(
     r"(?: (?P<rotation>normal|left|right|inverted))?"
 )
 _MODE_RE = re.compile(r"^\s+(?P<w>\d+)x(?P<h>\d+)i?\s+(?P<rates>.+)$")
+_PROVIDER_RE = re.compile(r"^Provider (?P<idx>\d+): id: (?P<id>0x[0-9a-f]+) cap: (?P<cap>0x[0-9a-f]+)")
 
 _SWAPPING_ROTATIONS = ("left", "right")
+
+# RandR provider capability bits (randr.h).
+_CAP_SOURCE_OUTPUT = 0x1  # can drive another provider's outputs — the GPU
+_CAP_SINK_OUTPUT = 0x2    # has outputs that need driving — the virtual display
 
 
 class XrandrBackend(LayoutBackend):
@@ -74,6 +89,56 @@ class XrandrBackend(LayoutBackend):
 
     def outputs(self) -> List[OutputState]:
         return self.parse(self._query())
+
+    def _providers(self) -> List[Tuple[str, int, int]]:
+        """(provider id, capability bits, associated-provider count)."""
+        res = self.runner.query(["xrandr", "--listproviders"], timeout=10)
+        if not res.ok:
+            return []
+        found = []
+        for line in res.stdout.splitlines():
+            m = _PROVIDER_RE.match(line.strip())
+            if m:
+                assoc = re.search(r"associated providers: (\d+)", line)
+                found.append((m.group("id"), int(m.group("cap"), 16),
+                              int(assoc.group(1)) if assoc else 0))
+        return found
+
+    def attach_new_outputs(self) -> None:
+        """Make a freshly-created virtual display visible to the X session.
+
+        evdi fabricates a separate DRM *card*, and X11 — unlike every Wayland
+        compositor — does not adopt one on its own.  It lists the card as a
+        PRIME provider whose outputs belong to nobody, and `xrandr -q` never
+        shows them until they are sourced from the GPU.  This is the step that
+        makes the difference between the display existing and the session being
+        able to use it, and evdi is the only provider a stock machine has.
+        """
+        providers = self._providers()
+        source = next((pid for pid, cap, _a in providers if cap & _CAP_SOURCE_OUTPUT), None)
+        # A real GPU reports Sink Output too (cap 0xf) — attaching it to itself
+        # is nonsense — and a sink already associated with a source is adopted.
+        sinks = [pid for pid, cap, assoc in providers
+                 if cap & _CAP_SINK_OUTPUT and pid != source and not assoc]
+        if not sinks:
+            return  # nothing to adopt — the VDD is an ordinary connector
+
+        if source is None:
+            # Nothing on this machine can drive it. Say so plainly: the
+            # alternative is the caller timing out and reporting only that the
+            # display "never appeared", which sends people looking in entirely
+            # the wrong place.
+            log.error("this GPU advertises no PRIME Source Output capability, so X11 "
+                      "cannot drive a virtual display attached to it (providers: %s)",
+                      ", ".join(f"{p}:cap={c:#x}" for p, c, _a in providers) or "none")
+            return
+
+        for sink in sinks:
+            res = self.runner.run(["xrandr", "--setprovideroutputsource", sink, source],
+                                  timeout=10)
+            if not res.ok:
+                log.warning("could not attach provider %s to %s: %s",
+                            sink, source, res.stderr.strip())
 
     def snapshot(self) -> dict:
         outputs = []
