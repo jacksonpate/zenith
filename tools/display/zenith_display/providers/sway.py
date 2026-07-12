@@ -45,7 +45,9 @@ class SwayProvider(VddProvider):
             runner.run(["swaymsg", "output", output, "unplug"], timeout=10)
 
     def vdd_outputs(self, env, runner: Runner) -> Set[str]:
-        # sway names every headless output HEADLESS-N and hands out a fresh N
-        # each time, so a VDD leaked by a crashed session is *guaranteed* not to
-        # match the current one by name. Match on what they all are instead.
-        return {n for n in self._output_names(runner) if n.startswith("HEADLESS-")}
+        # Nothing here. A sway output called HEADLESS-1 may be a virtual display
+        # we made *or* the user's real monitor — a headless sway session names
+        # its genuine outputs exactly the same way. Guessing from the name means
+        # destroying somebody's screen, so the ones we create are tracked
+        # instead (see snapshot.track_vdd).
+        return set()

@@ -149,3 +149,24 @@ def test_forget_drops_it(tmp_path):
     snapshot.remember("kscreen", _DESK, environ=env)
     snapshot.forget(environ=env)
     assert snapshot.remembered(environ=env) is None
+
+
+# --- knowing which outputs are ours ------------------------------------------
+
+def test_a_real_monitor_named_like_a_vdd_is_not_ours(tmp_path):
+    """Headless sway calls the user's genuine outputs HEADLESS-1, HEADLESS-2 —
+    the same names it gives the virtual displays we create. Guessing from the
+    name meant destroying the user's monitor as an 'orphaned VDD'. Only what we
+    recorded creating is ours."""
+    env = _environ(tmp_path)
+    snapshot.track_vdd("HEADLESS-2", environ=env)   # the one we made
+    ours = snapshot.tracked_vdds(environ=env)
+    assert ours == {"HEADLESS-2"}
+    assert "HEADLESS-1" not in ours                 # the user's monitor. Hands off.
+
+
+def test_a_vdd_stops_being_ours_once_torn_down(tmp_path):
+    env = _environ(tmp_path)
+    snapshot.track_vdd("HEADLESS-2", environ=env)
+    snapshot.untrack_vdd("HEADLESS-2", environ=env)
+    assert snapshot.tracked_vdds(environ=env) == set()

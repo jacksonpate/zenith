@@ -59,6 +59,40 @@ def remember(backend: str, payload: dict, environ=os.environ) -> None:
     os.replace(tmp, _desk_path(environ))
 
 
+def _vdds_path(environ=os.environ) -> str:
+    return os.path.join(state_dir(environ), "vdds.json")
+
+
+def tracked_vdds(environ=os.environ) -> set:
+    """Virtual displays Zenith created and has not torn down.
+
+    The only trustworthy record of what is ours.  A name cannot be trusted:
+    sway calls its outputs HEADLESS-1, HEADLESS-2… whether they are virtual
+    displays we made or the user's actual monitors in a headless session, and
+    mistaking the latter for the former means destroying somebody's screen.
+    """
+    try:
+        with open(_vdds_path(environ), encoding="utf-8") as fh:
+            return set(json.load(fh))
+    except (OSError, ValueError):
+        return set()
+
+
+def _write_vdds(names: set, environ=os.environ) -> None:
+    tmp = _vdds_path(environ) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(sorted(names), fh)
+    os.replace(tmp, _vdds_path(environ))
+
+
+def track_vdd(name: str, environ=os.environ) -> None:
+    _write_vdds(tracked_vdds(environ) | {name}, environ)
+
+
+def untrack_vdd(name: str, environ=os.environ) -> None:
+    _write_vdds(tracked_vdds(environ) - {name}, environ)
+
+
 def forget(environ=os.environ) -> None:
     try:
         os.unlink(_desk_path(environ))

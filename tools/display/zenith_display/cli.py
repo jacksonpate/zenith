@@ -123,7 +123,8 @@ def _apply(kind: str, args) -> int:
         # This is a desk somebody is sitting at. Learn it, so a future session
         # that finds no snapshot can put it back exactly — rather than lighting
         # up every monitor it can find, including the ones deliberately off.
-        snapshot.remember(backend.name, payload)
+        if not args.dry_run:  # a dry run inspects; it never writes
+            snapshot.remember(backend.name, payload)
     else:
         desk = snapshot.remembered()
         if desk:
@@ -146,6 +147,10 @@ def _apply(kind: str, args) -> int:
         return _degrade(args, EXIT_APPLY_FAILED, "VDD did not appear")
 
     if not args.dry_run:
+        # Record that this one is ours *before* touching the layout: the file is
+        # how a later run tells our virtual display from the user's monitors, and
+        # a crash between here and teardown is exactly when it gets consulted.
+        snapshot.track_vdd(vdd)
         # Save the layout we intend to go *back* to, which is not always the one
         # in front of us: entering dual from an already-dark desk, it is the
         # remembered desktop that has to survive the session, not the darkness.
@@ -178,8 +183,15 @@ def _apply(kind: str, args) -> int:
 
 
 def _known_vdds(env, runner: Runner, provider, stale: Optional[dict]) -> set:
-    """Every output that is a virtual display rather than one of the user's."""
-    names = set()
+    """Every output that is a virtual display rather than one of the user's.
+
+    Erring in either direction hurts: miss one and a leaked VDD gets counted as
+    a lit monitor, so dual relights the ghost and the desk stays dark; claim one
+    that is not ours and we destroy somebody's actual screen.  So this is drawn
+    from what we *recorded creating*, plus what the display stack itself flags as
+    virtual — never from what an output happens to be called.
+    """
+    names = set(snapshot.tracked_vdds())
     try:
         names |= provider.vdd_outputs(env, runner)
     except Exception as exc:  # a provider that cannot answer must not be fatal
@@ -202,6 +214,7 @@ def _destroy_orphans(env, runner: Runner, provider, vdds: set, backend) -> None:
         log.warning("tearing down an orphaned virtual display: %s", name)
         try:
             provider.destroy(env, runner, {"vdd_output": name})
+            snapshot.untrack_vdd(name)
         except Exception as exc:
             log.warning("could not destroy %s: %s", name, exc)
 
@@ -220,6 +233,8 @@ def _restore_from(doc: dict, env, runner: Runner) -> None:
     provider = providers.get_provider(doc.get("provider", ""))
     if provider is not None:
         provider.destroy(env, runner, {"vdd_output": doc.get("vdd_output")})
+        if doc.get("vdd_output") and not runner.dry_run:
+            snapshot.untrack_vdd(doc["vdd_output"])
     elif doc.get("provider"):
         log.warning("unknown provider %r in snapshot — its VDD may need manual teardown",
                     doc.get("provider"))
