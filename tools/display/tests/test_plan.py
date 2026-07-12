@@ -40,11 +40,19 @@ def test_tty_has_no_backend():
     assert get_backend(env, FakeRunner()) is None
 
 
-def test_forced_connector_always_first_in_chain():
-    chain = chain_for(_env())
-    assert chain[0].name == "forced-connector"
-    assert chain[-2].name == "evdi"
-    assert chain[-1].name == "drm-debugfs"
+def test_evdi_outranks_the_forced_connector():
+    """A forced connector is permanent hardware: it cannot be created, cannot be
+    destroyed, and there can only ever be one. evdi can do all three. Preferring
+    the forced connector is why a VDD never died when the app quit."""
+    names = [p.name for p in chain_for(_env())]
+    assert names.index("evdi") < names.index("forced-connector")
+    assert names[-1] == "drm-debugfs"  # last resort, needs root
+
+
+def test_a_provisioned_connector_is_still_a_fallback():
+    """Machines already provisioned with a forced connector keep working — it is
+    demoted, not deleted."""
+    assert "forced-connector" in [p.name for p in chain_for(_env())]
 
 
 def test_chain_includes_compositor_native_for_sway():

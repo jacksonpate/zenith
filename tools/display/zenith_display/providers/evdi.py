@@ -40,6 +40,20 @@ _PACKAGE_CANDIDATES = {
 
 _ADD_PATH = "/sys/devices/evdi/add"
 
+# Image-based Fedora (Silverblue, Kinoite, Bazzite). Ordered best-first: an
+# akmod rebuilds itself against each new kernel, a plain kmod does not.
+_OSTREE_PACKAGES = ["akmod-evdi", "kmod-evdi", "evdi"]
+
+
+def _is_ostree() -> bool:
+    """An image-based Fedora, where there is no dnf to install anything with.
+
+    Without this the package loop below matches no package manager at all, and
+    evdi is uninstallable — so the machine falls through to a provider that
+    cannot create a display, or to nothing at all.
+    """
+    return os.path.exists("/run/ostree-booted") and which("rpm-ostree") is not None
+
 
 def _module_loaded() -> bool:
     return os.path.isdir("/sys/module/evdi")
@@ -101,6 +115,7 @@ def _idle_evdi_cards() -> list:
 class EvdiProvider(VddProvider):
     name = "evdi"
     description = "EVDI virtual DRM display (universal fallback)"
+    reboot_required = False  # set by _layer_on_ostree: installed, but not live yet
 
     def _root_wrap(self, env, argv: List[str]) -> List[str]:
         return argv if env.is_root else ["sudo", "-n", *argv]
@@ -122,24 +137,47 @@ class EvdiProvider(VddProvider):
             return False
         if not _module_loaded():
             if not runner.run(self._root_wrap(env, ["modprobe", "evdi"]), timeout=20).ok:
-                # Module absent entirely: try the distro package, then modprobe again.
-                for pm, packages in _PACKAGE_CANDIDATES.items():
-                    if not which(pm):
-                        continue
-                    for pkg in packages:
-                        install = {
-                            "apt-get": [pm, "install", "-y", pkg],
-                            "dnf": [pm, "install", "-y", pkg],
-                            "pacman": [pm, "-S", "--noconfirm", pkg],
-                            "zypper": [pm, "-n", "install", pkg],
-                        }[pm]
-                        if runner.run(self._root_wrap(env, install), timeout=600).ok:
-                            if runner.run(self._root_wrap(env, ["modprobe", "evdi"]), timeout=20).ok:
-                                break
-                    break  # only ever one native package manager
+                # Module absent entirely: get it from the distro, then modprobe again.
+                if _is_ostree():
+                    self._layer_on_ostree(env, runner)
+                else:
+                    self._install_from_repo(env, runner)
         if _module_loaded() and not _add_writable():
             runner.run(self._root_wrap(env, ["chmod", "0666", _ADD_PATH]), timeout=5)
         return _module_loaded()
+
+    def _layer_on_ostree(self, env, runner: Runner) -> None:
+        """Layer the module into the next deployment.
+
+        rpm-ostree does not touch the running system — it writes a new
+        deployment — so the module cannot be loaded until the machine reboots.
+        Record that, because reporting a plain failure would be a lie: the
+        install worked, it just is not live yet.
+        """
+        for pkg in _OSTREE_PACKAGES:
+            res = runner.run(
+                self._root_wrap(env, ["rpm-ostree", "install", "-y", "--idempotent", pkg]),
+                timeout=900,
+            )
+            if res.ok:
+                self.reboot_required = True
+                return
+
+    def _install_from_repo(self, env, runner: Runner) -> None:
+        for pm, packages in _PACKAGE_CANDIDATES.items():
+            if not which(pm):
+                continue
+            for pkg in packages:
+                install = {
+                    "apt-get": [pm, "install", "-y", pkg],
+                    "dnf": [pm, "install", "-y", pkg],
+                    "pacman": [pm, "-S", "--noconfirm", pkg],
+                    "zypper": [pm, "-n", "install", pkg],
+                }[pm]
+                if runner.run(self._root_wrap(env, install), timeout=600).ok:
+                    if runner.run(self._root_wrap(env, ["modprobe", "evdi"]), timeout=20).ok:
+                        break
+            break  # only ever one native package manager
 
     def _spawn_holder(self, env, runner: Runner, card: int, edid_path: str, pidfile: str, area: int) -> None:
         pkg_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

@@ -25,7 +25,7 @@ native way on Linux (PipeWire, KMS/DRM, Wayland) and with a bundled signed drive
 with NVIDIA **and** AMD as first-class citizens. Install it, pick **Headless** in Moonlight, and
 a virtual display spins up at your client's exact resolution and refresh. No extra steps.
 
-- 🖥️ **Plug-and-play virtual displays** — "Headless" and "Dual Display" apps work out of the
+- 🖥️ **Plug-and-play virtual displays** — "Headless" and "Extend" apps work out of the
   box on Linux (KDE, GNOME, Sway/wlroots, Cinnamon — via a provider chain of forced-connector,
   compositor APIs, and a universal EVDI fallback that installs itself) and on Windows (bundled
   signed SudoVDA driver). The virtual display is born at the client's mode, so you stream at
