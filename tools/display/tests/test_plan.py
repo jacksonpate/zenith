@@ -85,3 +85,24 @@ def test_nvidia_driver_version_missing(tmp_path):
     p = tmp_path / "version"
     p.write_text("550.163.01\n")
     assert detect.nvidia_driver_version(str(p)) == "550.163.01"
+
+
+def test_forced_connector_does_not_steal_evdis_leftover_connector():
+    """An evdi connector keeps the ZenithVDD EDID long after its session ends,
+    so it looks provisioned — but it is dead without a holder, and this provider
+    cannot start one. Claiming it (from the front of the chain) would hand every
+    session after the first a display that can never produce a frame."""
+    provider = ForcedConnectorProvider()
+    leftover = Connector(sysfs="/sys/class/drm/card1-DVI-I-1", name="DVI-I-1",
+                         status="disconnected", enabled=False, monitor="ZenithVDD",
+                         is_vdd=True, driver="evdi")
+    ok, reason = provider.probe(_env(connectors=[leftover]), FakeRunner())
+    assert not ok and "evdi" in reason
+
+
+def test_forced_connector_still_claims_a_real_provisioned_connector():
+    provider = ForcedConnectorProvider()
+    real = Connector(sysfs="/sys/class/drm/card0-DP-1", name="DP-1", status="connected",
+                     enabled=True, monitor="ZenithVDD", is_vdd=True, driver="amdgpu")
+    ok, reason = provider.probe(_env(connectors=[real]), FakeRunner())
+    assert ok and "DP-1" in reason

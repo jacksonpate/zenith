@@ -215,3 +215,53 @@ def test_dual_falls_back_when_the_baselines_mode_is_gone():
     argv = " ".join(backend.runner.trace[-1])
     assert "3840x2160" not in argv
     assert "--output eDP-1 --mode 1920x1080" in argv
+
+
+# --- adopting a virtual display on X11 --------------------------------------
+#
+# A Wayland compositor picks up a new DRM card by itself. X11 does not: it lists
+# the card as a PRIME provider and leaves its outputs invisible to `xrandr -q`
+# until they are sourced from the GPU. evdi is the only provider a stock machine
+# has, so without this step the feature simply does not exist on X11.
+
+_PROVIDERS_WITH_GPU = """\
+Providers: number : 2
+Provider 0: id: 0x40 cap: 0xf, Source Output, Sink Output, Source Offload, Sink Offload crtcs: 4 outputs: 3 associated providers: 0 name:Intel
+Provider 1: id: 0x24e cap: 0x2, Sink Output crtcs: 1 outputs: 1 associated providers: 0 name:modesetting
+"""
+
+# What a virtio-GPU VM really reports: no Source Output capability anywhere, so
+# nothing on the machine can drive a virtual display.
+_PROVIDERS_NO_SOURCE = """\
+Providers: number : 2
+Provider 0: id: 0x40 cap: 0x0 crtcs: 1 outputs: 1 associated providers: 0 name:modesetting
+Provider 1: id: 0x24e cap: 0x2, Sink Output crtcs: 1 outputs: 1 associated providers: 0 name:modesetting
+"""
+
+
+def test_a_new_drm_card_is_sourced_from_the_gpu():
+    backend = XrandrBackend(FakeRunner({("xrandr", "--listproviders"): _PROVIDERS_WITH_GPU}))
+    backend.attach_new_outputs()
+    assert backend.runner.trace[-1] == ["xrandr", "--setprovideroutputsource", "0x24e", "0x40"]
+
+
+def test_no_source_capable_gpu_is_reported_not_retried(caplog):
+    """The VM case. Saying nothing here leaves the caller to time out and report
+    only that the display 'never appeared', which sends people looking in
+    entirely the wrong place."""
+    backend = XrandrBackend(FakeRunner({("xrandr", "--listproviders"): _PROVIDERS_NO_SOURCE}))
+    with caplog.at_level("ERROR"):
+        backend.attach_new_outputs()
+    assert "no PRIME Source Output" in caplog.text
+    assert not any("setprovideroutputsource" in a for t in backend.runner.trace for a in t)
+
+
+def test_nothing_to_adopt_is_not_an_error():
+    """The VDD is an ordinary connector (forced-connector, drm-debugfs) — there
+    is no separate card to attach."""
+    backend = XrandrBackend(FakeRunner({("xrandr", "--listproviders"):
+                                        "Providers: number : 1\n"
+                                        "Provider 0: id: 0x40 cap: 0xf, Source Output crtcs: 4 "
+                                        "outputs: 3 associated providers: 0 name:Intel\n"}))
+    backend.attach_new_outputs()
+    assert not any("setprovideroutputsource" in a for t in backend.runner.trace for a in t)

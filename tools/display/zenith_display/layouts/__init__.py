@@ -112,6 +112,13 @@ class LayoutBackend:
         """
         raise NotImplementedError
 
+    def attach_new_outputs(self) -> None:
+        """Adopt a virtual display a provider has just created.
+
+        Wayland compositors pick up a new DRM card on their own, so for them
+        this is nothing.  X11 does not — see `XrandrBackend.attach_new_outputs`.
+        """
+
     def wait_for_output(self, name_hint: str, timeout: float = 8.0) -> Optional[str]:
         """Poll until an output matching `name_hint` shows up.
 
