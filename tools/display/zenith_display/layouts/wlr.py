@@ -11,7 +11,7 @@ Two transports, picked at runtime:
 from __future__ import annotations
 
 import json
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 from ..modes import Mode
 from . import LayoutBackend, OutputState
@@ -104,21 +104,22 @@ class WlrBackend(LayoutBackend):
 
     # -- mutations ----------------------------------------------------------
 
-    def _enable(self, name: str, mode: Mode, x: int, y: int = 0) -> None:
+    def _enable(self, name: str, mode: Mode, x: int, y: int = 0,
+                scale: Optional[float] = None) -> None:
         if self._sway():
             # `--` stops swaymsg's own getopt from eating the command's --custom.
-            self.runner.run(
-                ["swaymsg", "--", "output", name, "enable", "mode", "--custom",
-                 f"{mode.width}x{mode.height}@{mode.refresh}Hz", "position", str(x), str(y)],
-                timeout=15, check=True,
-            )
+            argv = ["swaymsg", "--", "output", name, "enable", "mode", "--custom",
+                    f"{mode.width}x{mode.height}@{mode.refresh}Hz",
+                    "position", str(x), str(y)]
+            if scale:
+                argv += ["scale", str(scale)]
         else:
-            self.runner.run(
-                ["wlr-randr", "--output", name, "--on",
-                 "--custom-mode", f"{mode.width}x{mode.height}@{mode.refresh}Hz",
-                 "--pos", f"{x},{y}"],
-                timeout=15, check=True,
-            )
+            argv = ["wlr-randr", "--output", name, "--on",
+                    "--custom-mode", f"{mode.width}x{mode.height}@{mode.refresh}Hz",
+                    "--pos", f"{x},{y}"]
+            if scale:
+                argv += ["--scale", str(scale)]
+        self.runner.run(argv, timeout=15, check=True)
 
     def _disable(self, name: str) -> None:
         if self._sway():
@@ -132,9 +133,35 @@ class WlrBackend(LayoutBackend):
             if out.name != vdd and out.enabled:
                 self._disable(out.name)
 
-    def apply_dual(self, vdd: str, mode: Mode) -> None:
-        edge = self.rightmost_edge([o for o in self.outputs() if o.name != vdd])
-        self._enable(vdd, mode, edge)
+    def apply_dual(self, vdd: str, mode: Mode, baseline: Optional[dict] = None) -> None:
+        """Relight the user's monitors, then add the VDD off the right edge —
+        entering dual from a headless session, they are all off."""
+        targets = self.dual_targets(vdd, baseline)
+        for out in targets:
+            if out.enabled:
+                self._enable(out.name, Mode(out.width, out.height, round(out.refresh) or 60),
+                             out.x, out.y, out.scale)
+            else:
+                self._disable(out.name)
+        self._enable(vdd, mode, self.rightmost_edge(targets))
+
+    def relight(self, vdds: Iterable[str] = ()) -> None:
+        outs = self.outputs()
+        monitors = [o for o in outs if o.connected and o.name not in vdds]
+        if not monitors:
+            return  # nothing real to fall back to — never blank the only display
+        # No mode given: the compositor falls back to the output's preferred one.
+        for out in monitors:
+            if out.enabled:
+                continue
+            if self._sway():
+                self.runner.run(["swaymsg", "output", out.name, "enable"], timeout=15, check=True)
+            else:
+                self.runner.run(["wlr-randr", "--output", out.name, "--on"],
+                                timeout=15, check=True)
+        for out in outs:
+            if out.name in vdds and out.enabled:
+                self._disable(out.name)
 
     def restore(self, payload: dict) -> None:
         for out in payload.get("outputs", []):

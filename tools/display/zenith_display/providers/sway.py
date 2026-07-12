@@ -43,3 +43,11 @@ class SwayProvider(VddProvider):
         output = state.get("vdd_output")
         if output:
             runner.run(["swaymsg", "output", output, "unplug"], timeout=10)
+
+    def vdd_outputs(self, env, runner: Runner) -> Set[str]:
+        # Nothing here. A sway output called HEADLESS-1 may be a virtual display
+        # we made *or* the user's real monitor — a headless sway session names
+        # its genuine outputs exactly the same way. Guessing from the name means
+        # destroying somebody's screen, so the ones we create are tracked
+        # instead (see snapshot.track_vdd).
+        return set()

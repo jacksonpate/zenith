@@ -8,7 +8,7 @@ the client's refresh -> 120 -> 60 -> the output's preferred mode.
 from __future__ import annotations
 
 import json
-from typing import List
+from typing import Iterable, List, Optional
 
 from ..modes import Mode
 from . import LayoutBackend, OutputState
@@ -94,15 +94,51 @@ class KScreenBackend(LayoutBackend):
                 args.append(f"output.{out.name}.disable")
         self.runner.run(["kscreen-doctor", *args], timeout=15, check=True)
 
-    def apply_dual(self, vdd: str, mode: Mode) -> None:
-        edge = self.rightmost_edge([o for o in self.outputs() if o.name != vdd])
-        args = [
+    def apply_dual(self, vdd: str, mode: Mode, baseline: Optional[dict] = None) -> None:
+        """Put the user's monitors back, then hang the VDD off the right edge.
+
+        Dual is entered straight out of headless as often as from the desktop,
+        so it restates the whole layout instead of assuming the monitors are
+        still on — they usually are not.  One kscreen-doctor call, so the
+        compositor reconfigures once.
+        """
+        targets = self.dual_targets(vdd, baseline)
+        args: List[str] = []
+        for out in targets:
+            if not out.enabled:
+                args.append(f"output.{out.name}.disable")
+                continue
+            args.append(f"output.{out.name}.enable")
+            if out.width:
+                args.append(f"output.{out.name}.mode.{out.width}x{out.height}@{round(out.refresh)}")
+            args.append(f"output.{out.name}.position.{out.x},{out.y}")
+            if out.scale:
+                args.append(f"output.{out.name}.scale.{out.scale}")
+            if out.priority:
+                args.append(f"output.{out.name}.priority.{out.priority}")
+
+        # The VDD sits after every real monitor: never primary (headless leaves
+        # it at priority 1), and never on top of them at x=0.
+        last = max((o.priority for o in targets if o.enabled), default=1)
+        args += [
             f"output.{vdd}.enable",
-            f"output.{vdd}.priority.2",
-            f"output.{vdd}.position.{edge},0",
+            f"output.{vdd}.priority.{last + 1}",
+            f"output.{vdd}.position.{self.rightmost_edge(targets)},0",
         ]
         args += self._set_mode_args(vdd, mode, self._vdd_modes(vdd))
         self.runner.run(["kscreen-doctor", *args], timeout=15, check=True)
+
+    def relight(self, vdds: Iterable[str] = ()) -> None:
+        outs = self.outputs()
+        monitors = [o for o in outs if o.connected and o.name not in vdds]
+        if not monitors:
+            return  # nothing real to fall back to — never blank the only display
+        # kscreen keeps an output's mode and position while it is disabled, so
+        # a bare .enable puts it back where it was.
+        args = [f"output.{o.name}.enable" for o in monitors if not o.enabled]
+        args += [f"output.{o.name}.disable" for o in outs if o.name in vdds and o.enabled]
+        if args:
+            self.runner.run(["kscreen-doctor", *args], timeout=15, check=True)
 
     def restore(self, payload: dict) -> None:
         args: List[str] = []

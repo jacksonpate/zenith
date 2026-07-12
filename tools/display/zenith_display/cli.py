@@ -5,6 +5,9 @@
     zenith-display headless         only the VDD stays lit, at the client mode
     zenith-display dual             VDD joins as one more monitor
     zenith-display restore          tear down the VDD, replay the snapshot
+    zenith-display remember         pin the desk as it is now as the layout to
+                                    come back to (learned automatically too)
+    zenith-display forget           drop it and relearn on the next desktop
     zenith-display setup            one-time privileged bootstrap (module,
                                     package, permissions) — run at install
     zenith-display doctor           human diagnosis + bootstrap hints
@@ -22,6 +25,7 @@ import argparse
 import json
 import logging
 import sys
+from typing import Optional
 
 from . import __version__, providers, snapshot
 from . import detect as detect_mod
@@ -86,15 +90,6 @@ def _apply(kind: str, args) -> int:
                         f"no layout backend for session={env.session_type} "
                         f"desktop={env.desktop or '-'} (see `zenith-display doctor`)")
 
-    # Crash-safety: a leftover snapshot means a previous session never
-    # restored. Put the user's layout back before doing anything new.
-    stale = snapshot.load()
-    if stale and not args.dry_run:
-        log.warning("stale snapshot found — restoring previous layout first")
-        _restore_from(stale, env, runner)
-
-    payload = backend.snapshot()
-
     provider, report = providers.choose(env, runner)
     if provider is None:
         for entry in report:
@@ -102,6 +97,42 @@ def _apply(kind: str, args) -> int:
         return _degrade(args, EXIT_NO_PROVIDER,
                         "no VDD provider available (try `sudo zenith-display setup`)")
     log.info("mode=%s backend=%s provider=%s", mode, backend.name, provider.name)
+
+    # Crash-safety: a leftover snapshot means a previous session never
+    # restored. Put the user's layout back before doing anything new.
+    stale = snapshot.load()
+    if stale and not args.dry_run:
+        log.warning("stale snapshot found — restoring previous layout first")
+        _restore_from(stale, env, runner)
+
+    # Every virtual display currently up, ours or a dead session's. A leaked VDD
+    # is not a monitor: counted as one, it convinces us the desk is lit, gets
+    # recorded into the baseline, and dual then relights the ghost instead.
+    vdds = _known_vdds(env, runner, provider, stale)
+    if not args.dry_run:
+        _destroy_orphans(env, runner, provider, vdds, backend)
+        # Let the restore land. Compositors reconfigure asynchronously, so the
+        # layout we are about to record as "the user's" is still the old
+        # session's for a beat — and recording a dark desk as the baseline is
+        # what leaves the monitors dark forever after.
+        backend.wait_for_user_layout(exclude=vdds)
+
+    payload = _strip(backend.snapshot(), vdds)
+    baseline = payload
+    if snapshot.is_user_layout(payload):
+        # This is a desk somebody is sitting at. Learn it, so a future session
+        # that finds no snapshot can put it back exactly — rather than lighting
+        # up every monitor it can find, including the ones deliberately off.
+        if not args.dry_run:  # a dry run inspects; it never writes
+            snapshot.remember(backend.name, payload)
+    else:
+        desk = snapshot.remembered()
+        if desk:
+            log.warning("no monitor is lit — falling back to the last desktop we saw")
+            baseline = desk["payload"]
+        else:
+            log.warning("no monitor is lit and no remembered desktop — dual will light "
+                        "every connected output")
 
     try:
         hint = provider.create(env, runner, mode)
@@ -116,17 +147,24 @@ def _apply(kind: str, args) -> int:
         return _degrade(args, EXIT_APPLY_FAILED, "VDD did not appear")
 
     if not args.dry_run:
-        snapshot.save(backend.name, payload, provider=provider.name, vdd_output=vdd)
+        # Record that this one is ours *before* touching the layout: the file is
+        # how a later run tells our virtual display from the user's monitors, and
+        # a crash between here and teardown is exactly when it gets consulted.
+        snapshot.track_vdd(vdd)
+        # Save the layout we intend to go *back* to, which is not always the one
+        # in front of us: entering dual from an already-dark desk, it is the
+        # remembered desktop that has to survive the session, not the darkness.
+        snapshot.save(backend.name, baseline, provider=provider.name, vdd_output=vdd)
     try:
         if kind == "headless":
             backend.apply_headless(vdd, mode)
         else:
-            backend.apply_dual(vdd, mode)
+            backend.apply_dual(vdd, mode, baseline)
     except Exception as exc:  # roll back: never leave the user stranded
         log.error("apply failed (%s); rolling back", exc)
         restored = False
         try:
-            backend.restore(payload)
+            backend.restore(baseline)
             restored = True
         finally:
             provider.destroy(env, runner, {"vdd_output": vdd})
@@ -144,6 +182,48 @@ def _apply(kind: str, args) -> int:
     return EXIT_OK
 
 
+def _known_vdds(env, runner: Runner, provider, stale: Optional[dict]) -> set:
+    """Every output that is a virtual display rather than one of the user's.
+
+    Erring in either direction hurts: miss one and a leaked VDD gets counted as
+    a lit monitor, so dual relights the ghost and the desk stays dark; claim one
+    that is not ours and we destroy somebody's actual screen.  So this is drawn
+    from what we *recorded creating*, plus what the display stack itself flags as
+    virtual — never from what an output happens to be called.
+    """
+    names = set(snapshot.tracked_vdds())
+    try:
+        names |= provider.vdd_outputs(env, runner)
+    except Exception as exc:  # a provider that cannot answer must not be fatal
+        log.warning("provider %s could not list its VDDs (%s)", provider.name, exc)
+    names |= {c.name for c in env.vdd_connectors}
+    if stale and stale.get("vdd_output"):
+        names.add(stale["vdd_output"])
+    return names
+
+
+def _destroy_orphans(env, runner: Runner, provider, vdds: set, backend) -> None:
+    """Tear down virtual displays no session is using any more.
+
+    A crash leaves one lit with no snapshot naming it. It is not the user's, so
+    it must not survive into the baseline — but it must not be mistaken for the
+    only lit output either, so anything still up gets destroyed before we look.
+    """
+    live = {o.name for o in backend.outputs() if o.enabled}
+    for name in sorted(vdds & live):
+        log.warning("tearing down an orphaned virtual display: %s", name)
+        try:
+            provider.destroy(env, runner, {"vdd_output": name})
+            snapshot.untrack_vdd(name)
+        except Exception as exc:
+            log.warning("could not destroy %s: %s", name, exc)
+
+
+def _strip(payload: dict, vdds: set) -> dict:
+    """The user's own monitors: no virtual display belongs in their baseline."""
+    return {"outputs": [o for o in payload.get("outputs", []) if o.get("name") not in vdds]}
+
+
 def _restore_from(doc: dict, env, runner: Runner) -> None:
     backend_cls = _BACKENDS.get(doc.get("backend", ""))
     if backend_cls is None:
@@ -153,11 +233,45 @@ def _restore_from(doc: dict, env, runner: Runner) -> None:
     provider = providers.get_provider(doc.get("provider", ""))
     if provider is not None:
         provider.destroy(env, runner, {"vdd_output": doc.get("vdd_output")})
+        if doc.get("vdd_output") and not runner.dry_run:
+            snapshot.untrack_vdd(doc["vdd_output"])
     elif doc.get("provider"):
         log.warning("unknown provider %r in snapshot — its VDD may need manual teardown",
                     doc.get("provider"))
+
+    backend = backend_cls(runner)
+
+    # Switch the VDD's output off explicitly. Destroying it is not the same
+    # thing — a forced connector is a real port and stays lit — and the baseline
+    # deliberately holds only the user's own monitors, so nothing else will.
+    #
+    # Drop anything the display stack no longer has, too: a layout can outlive
+    # the monitor it names (undock, swap a cable), and one stale entry is enough
+    # to fail the whole replay and leave the desk dark.
+    live = {o.name for o in backend.outputs()}
+    outputs = [o for o in doc.get("payload", {}).get("outputs", []) if o.get("name") in live]
+    vdd = doc.get("vdd_output")
+
+    # Filtering can eat the only monitor the layout lit — undock the laptop and
+    # the remembered desk becomes "eDP-1: off, HDMI-A-1: <gone>", which replays
+    # as a black screen. A layout that lights nothing is not a layout to apply;
+    # it is a reason to fall back to one that does.
+    if not snapshot.is_user_layout({"outputs": outputs}):
+        log.warning("this layout lights nothing here (the monitor it named is gone) — "
+                    "bringing up what this machine actually has instead")
+        try:
+            backend.relight({vdd} if vdd else ())
+        except Exception as exc:
+            log.error("could not relight (%s)", exc)
+            return
+        if not runner.dry_run:
+            snapshot.clear()
+        return
+
+    if vdd:
+        outputs.append({"name": vdd, "enabled": False})
     try:
-        backend_cls(runner).restore(doc.get("payload", {}))
+        backend.restore({"outputs": outputs})
     except Exception as exc:
         log.error("restore failed (%s) — snapshot kept for retry", exc)
         return
@@ -166,13 +280,105 @@ def _restore_from(doc: dict, env, runner: Runner) -> None:
 
 
 def cmd_restore(args) -> int:
-    doc = snapshot.load()
-    if doc is None:
-        log.info("nothing to restore")
-        return EXIT_OK
+    doc = snapshot.load()  # discards a poisoned snapshot rather than replaying it
     runner = Runner(dry_run=args.dry_run)
     env = detect_mod.detect(runner=runner)
-    _restore_from(doc, env, runner)
+    if doc is not None:
+        _restore_from(doc, env, runner)
+        return EXIT_OK
+
+    # No baseline: none was ever taken, or the one on disk was poison and has
+    # just been dropped.  Restore is the *undo* command — if the desk is dark
+    # it is on us to fix that, and a plausible desktop beats no desktop.
+    backend = get_backend(env, runner)
+    if backend is None:
+        log.info("nothing to restore")
+        return EXIT_OK
+
+    provider, _report = providers.choose(env, runner)
+    vdds = _known_vdds(env, runner, provider, None) if provider else {
+        c.name for c in env.vdd_connectors}
+
+    # `restore` is how a session *ends*, so it owes the user two things: their
+    # monitors lit, and no virtual display left on the desk. With no snapshot to
+    # replay, do both from scratch rather than shrug — a leftover VDD is a
+    # phantom monitor, and a dark desk is the bug this whole path exists for.
+    lit_vdds = {o.name for o in backend.outputs() if o.enabled and o.name in vdds}
+    if _monitor_is_lit(backend, env, vdds) and not lit_vdds:
+        log.info("nothing to restore")
+        return EXIT_OK
+
+    if args.dry_run:
+        return EXIT_OK
+
+    # Prefer the desk we last saw the user at: it knows which panel they keep
+    # dark, where the monitors sit relative to each other, and which one is
+    # primary. Lighting everything up is a last resort, not a restore.
+    desk = snapshot.remembered()
+    if desk:
+        log.warning("no snapshot — putting back the last desktop we saw, and removing the VDD")
+        _restore_from({"backend": desk["backend"], "payload": desk["payload"],
+                       "provider": provider.name if provider else None,
+                       "vdd_output": next(iter(sorted(lit_vdds)), None)}, env, runner)
+        return EXIT_OK
+
+    log.warning("no snapshot and no remembered desktop — lighting every connected monitor")
+    backend.relight(vdds)  # monitors back on, and the orphaned VDD switched off
+
+    # Switching the VDD's output off is not the same as releasing whatever
+    # conjured it (an evdi device, a kwin virtual output). The snapshot that
+    # named the provider is exactly what we no longer have, so guess — but only
+    # once a real monitor is lit, so a failure here cannot leave a dark desk.
+    if provider and vdds and _monitor_is_lit(backend, env, vdds):
+        _destroy_orphans(env, runner, provider, vdds, backend)
+    return EXIT_OK
+
+
+def _monitor_is_lit(backend, env, vdds: set) -> bool:
+    """Is anything the user could actually be looking at switched on?"""
+    try:
+        return any(o.enabled and o.name not in vdds for o in backend.outputs())
+    except Exception as exc:  # a backend that cannot answer is not evidence of darkness
+        log.warning("could not read the current layout (%s)", exc)
+        return True
+
+
+def cmd_remember(args) -> int:
+    """Pin the desk as it is right now as the layout to come back to.
+
+    Zenith learns this on its own every time it sees a lit desk, but learning it
+    from whatever happens to be on screen is not always what the user means —
+    so let them say it outright.
+    """
+    runner = Runner(dry_run=args.dry_run)
+    env = detect_mod.detect(runner=runner)
+    backend = get_backend(env, runner)
+    if backend is None:
+        log.error("no layout backend here (see `zenith-display doctor`)")
+        return EXIT_NO_BACKEND
+
+    provider, _report = providers.choose(env, runner)
+    vdds = _known_vdds(env, runner, provider, None) if provider else {
+        c.name for c in env.vdd_connectors}
+    payload = _strip(backend.snapshot(), vdds)
+    if not snapshot.is_user_layout(payload):
+        log.error("no monitor is lit — refusing to remember a dark desk")
+        return EXIT_APPLY_FAILED
+
+    if not args.dry_run:
+        snapshot.remember(backend.name, payload)
+    for out in payload["outputs"]:
+        state = f"{out.get('mode') or ''} at {out.get('x', 0)},{out.get('y', 0)}" \
+            if out.get("enabled") else "off"
+        print(f"  {out['name']:<12} {state}{'  (primary)' if out.get('primary') else ''}")
+    print("remembered — restore and dual will put this back, exactly this.")
+    return EXIT_OK
+
+
+def cmd_forget(args) -> int:
+    if not args.dry_run:
+        snapshot.forget()
+    print("forgotten — Zenith will relearn your desktop the next time it sees one.")
     return EXIT_OK
 
 
@@ -235,7 +441,8 @@ def main(argv=None) -> int:
     parser.add_argument("--strict", action="store_true",
                         help="exit nonzero instead of degrading to the plain desktop")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("probe", "plan", "headless", "dual", "restore", "setup", "doctor"):
+    for name in ("probe", "plan", "headless", "dual", "restore", "remember", "forget",
+                 "setup", "doctor"):
         sub.add_parser(name)
     args = parser.parse_args(argv)
 
@@ -251,6 +458,8 @@ def main(argv=None) -> int:
         "headless": lambda a: _apply("headless", a),
         "dual": lambda a: _apply("dual", a),
         "restore": cmd_restore,
+        "remember": cmd_remember,
+        "forget": cmd_forget,
         "setup": cmd_setup,
         "doctor": cmd_doctor,
     }

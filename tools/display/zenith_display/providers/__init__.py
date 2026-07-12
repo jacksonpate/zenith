@@ -16,7 +16,7 @@ Providers never arrange displays — that's the layout backend's job.
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 
 from ..modes import Mode
 from ..runner import Runner
@@ -39,6 +39,19 @@ class VddProvider:
 
     def destroy(self, env, runner: Runner, state: dict) -> None:
         pass
+
+    def vdd_outputs(self, env, runner: Runner) -> Set[str]:
+        """Outputs present right now that are virtual displays, not real monitors.
+
+        Anyone asking "is a monitor the user could actually look at lit?" needs
+        this.  A VDD leaked by a crashed session is not one — and counting it as
+        one is how `dual` ends up relighting a ghost and parking a second VDD
+        beside it while the desk stays dark.
+
+        The default covers every provider that fabricates a DRM connector.
+        Compositor-native providers invent their own names and must say so.
+        """
+        return {c.name for c in env.vdd_connectors}
 
 
 def _classes():

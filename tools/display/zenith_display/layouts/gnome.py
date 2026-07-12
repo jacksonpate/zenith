@@ -8,10 +8,13 @@ on its own, which is exactly the failure mode we want.
 
 from __future__ import annotations
 
-from typing import List, Optional
+import logging
+from typing import Iterable, List, Optional
 
 from ..modes import Mode
 from . import LayoutBackend, OutputState
+
+log = logging.getLogger("zenith-display")
 
 try:  # pragma: no cover - exercised only on GNOME machines
     from gi.repository import Gio, GLib
@@ -94,20 +97,103 @@ class GnomeBackend(LayoutBackend):
             raise RuntimeError(f"no usable mode on {vdd}")
         self._apply([self._logical(0, 0, 1.0, True, vdd, mode_id)])
 
-    def apply_dual(self, vdd: str, mode: Mode) -> None:  # pragma: no cover
+    def _resolve(self, monitors, connector: str, mode: Optional[Mode],
+                 scale: float = 1.0):  # pragma: no cover
+        """A mode id for `connector`, and a scale that mode actually permits.
+
+        Mutter validates scale *per resolution* and rejects the entire config if
+        they disagree — and `_mode_id` may quietly fall back to the preferred
+        mode when the one asked for is gone, desyncing the two.  Resolve them
+        together or not at all.
+        """
+        for (conn, *_id), modes, _props in monitors:
+            if conn != connector:
+                continue
+            chosen = None
+            if mode:
+                for refresh in (mode.refresh, 120, 60):
+                    chosen = next((m for m in modes if m[1] == mode.width
+                                   and m[2] == mode.height and round(m[3]) == refresh), None)
+                    if chosen:
+                        break
+            if chosen is None:
+                chosen = next((m for m in modes if m[6].get("is-preferred")),
+                              modes[0] if modes else None)
+            if chosen is None:
+                return None, scale
+            supported = [float(s) for s in chosen[5]] or [1.0]
+            return chosen[0], min(supported, key=lambda s: abs(s - (scale or 1.0)))
+        return None, scale
+
+    def apply_dual(self, vdd: str, mode: Mode,
+                   baseline: Optional[dict] = None) -> None:  # pragma: no cover
+        """An output left out of ApplyMonitorsConfig is an output that is *off*,
+        so a dual entered from headless must name the user's monitors again —
+        reading them from the current state would only find the VDD.
+
+        Mutter takes the config as a whole or not at all: one unknown monitor,
+        one gap between logical monitors, one bad scale, no primary — and the
+        user stays in headless.  `dual_targets` guarantees the layout is packed
+        and has a primary; everything named here is checked against what mutter
+        currently reports.
+        """
         monitors = self._state().unpack()[1]
-        mode_id = self._mode_id(monitors, vdd, mode)
-        if not mode_id:
+        vdd_mode_id, _scale = self._resolve(monitors, vdd, mode)
+        if not vdd_mode_id:
             raise RuntimeError(f"no usable mode on {vdd}")
+
+        targets = self._anchored(self.dual_targets(vdd, baseline))
+        try:
+            self._apply(self._layout(monitors, targets, vdd, vdd_mode_id))
+        except Exception as exc:
+            # Mutter rejects a config whole: a gap between logical monitors (we
+            # dropped one it no longer has), an unusable scale, an arrangement it
+            # dislikes. Rather than strand the user in headless, lay the same
+            # monitors out plainly, left to right, and try once more.
+            log.warning("mutter rejected the dual layout (%s); retrying packed", exc)
+            self._apply(self._layout(monitors, self._packed(targets, repack=True),
+                                     vdd, vdd_mode_id))
+
+    def _layout(self, monitors, targets, vdd: str, vdd_mode_id: str):  # pragma: no cover
+        layout = []
+        for out in targets:
+            if not out.enabled:
+                continue  # omitted from the layout == off
+            want = Mode(out.width, out.height, round(out.refresh) or 60) if out.width else None
+            mode_id, scale = self._resolve(monitors, out.name, want, out.scale)
+            if not mode_id:
+                continue  # mutter no longer has it; naming it would sink the config
+            layout.append(self._logical(out.x, out.y, scale, out.primary, out.name, mode_id))
+        layout.append(self._logical(self.rightmost_edge(targets), 0, 1.0, False,
+                                    vdd, vdd_mode_id))
+        return layout
+
+    @staticmethod
+    def _anchored(targets):
+        """Mutter requires the logical layout to start at (0,0) — X11 and KDE do
+        not, so a perfectly good baseline can hold negative coordinates."""
+        lit = [o for o in targets if o.enabled]
+        if lit:
+            dx, dy = min(o.x for o in lit), min(o.y for o in lit)
+            for out in lit:
+                out.x, out.y = out.x - dx, out.y - dy
+        return targets
+
+    def relight(self, vdds: Iterable[str] = ()) -> None:  # pragma: no cover
+        # Rebuild the layout from scratch at preferred modes, left to right. The
+        # VDDs need no explicit teardown here: an output missing from the config
+        # is an output off.
+        monitors = self._state().unpack()[1]
         layout = []
         edge = 0
-        for out in self.outputs():
-            if out.enabled and out.name != vdd:
-                current = self._mode_id(monitors, out.name, None)
-                layout.append(self._logical(out.x, out.y, out.scale, out.primary, out.name, current))
-                edge = max(edge, out.x + int(out.width / (out.scale or 1.0)))
-        layout.append(self._logical(edge, 0, 1.0, False, vdd, mode_id))
-        self._apply(layout)
+        for (connector, *_id), modes, _props in monitors:
+            if connector in vdds or not modes:
+                continue
+            preferred = next((m for m in modes if m[6].get("is-preferred")), modes[0])
+            layout.append(self._logical(edge, 0, 1.0, not layout, connector, preferred[0]))
+            edge += preferred[1]
+        if layout:  # no real monitor to fall back to — never blank the only output
+            self._apply(layout)
 
     def snapshot(self) -> dict:
         outputs = []

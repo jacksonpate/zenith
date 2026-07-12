@@ -8,7 +8,7 @@ falls through to EVDI or a forced connector.
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Optional, Set, Tuple
 
 from ..modes import Mode
 from ..runner import Runner
@@ -74,3 +74,6 @@ class KwinVirtualProvider(VddProvider):
                  state.get("vdd_output", _OUTPUT_NAME)],
                 timeout=10,
             )
+
+    def vdd_outputs(self, env, runner: Runner) -> Set[str]:
+        return {_OUTPUT_NAME}

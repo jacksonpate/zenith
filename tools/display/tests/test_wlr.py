@@ -93,3 +93,80 @@ def test_sway_restore_reenables_from_snapshot(fixture_text):
     joined = [" ".join(t) for t in backend.runner.trace]
     assert any("output HEADLESS-1 enable mode --custom 1280x720@60Hz position 0 0" in j for j in joined)
     assert any("output HEADLESS-2 disable" in j for j in joined)
+
+
+# --- dual entered from a headless session -----------------------------------
+#
+# sway reports a disabled output as `current_mode: null`, `rect` all zeroes and
+# `scale: null` — its mode list is the only thing left to light it from. That is
+# what made the fallback a silent no-op: every target arrived with width=0.
+
+_SWAY_AFTER_HEADLESS = json.dumps([
+    {
+        "name": "DP-1", "active": False, "current_mode": None,
+        "rect": {"x": 0, "y": 0, "width": 0, "height": 0}, "scale": None,
+        "modes": [{"width": 2560, "height": 1440, "refresh": 60000}],
+    },
+    {
+        "name": "DP-2", "active": False, "current_mode": None,
+        "rect": {"x": 0, "y": 0, "width": 0, "height": 0}, "scale": None,
+        "modes": [{"width": 1920, "height": 1080, "refresh": 60000}],
+    },
+    {
+        "name": "HEADLESS-1", "active": True,
+        "current_mode": {"width": 2420, "height": 1668, "refresh": 120000},
+        "rect": {"x": 0, "y": 0, "width": 2420, "height": 1668}, "scale": 1.0,
+        "modes": [{"width": 2420, "height": 1668, "refresh": 120000}],
+    },
+])
+
+_USER_DESK = {"outputs": [
+    {"name": "DP-1", "enabled": True, "width": 2560, "height": 1440, "refresh": 60,
+     "x": 0, "y": 0, "scale": 1.0},
+    {"name": "DP-2", "enabled": True, "width": 1920, "height": 1080, "refresh": 60,
+     "x": 2560, "y": 0, "scale": 1.0},
+]}
+
+
+def _sway_after_headless():
+    return WlrBackend(FakeRunner({"swaymsg": _SWAY_AFTER_HEADLESS}))
+
+
+def _cmds(backend):
+    return [" ".join(t) for t in backend.runner.trace]
+
+
+def test_sway_dual_relights_the_monitors_headless_turned_off():
+    backend = _sway_after_headless()
+    backend.apply_dual("HEADLESS-1", Mode(2420, 1668, 120), _USER_DESK)
+    cmds = _cmds(backend)
+    assert any("output DP-1 enable" in c and "2560x1440@60Hz" in c for c in cmds)
+    assert any("output DP-2 enable" in c and "position 2560 0" in c for c in cmds)
+    assert any("output HEADLESS-1 enable" in c and "position 4480 0" in c for c in cmds)
+
+
+def test_sway_dual_without_a_baseline_still_relights_them():
+    """The documented fallback was dead code on wlr: a disabled output reports
+    no mode, so `if out.enabled and out.width` skipped every monitor and left
+    the desk exactly as dark as before the fix."""
+    backend = _sway_after_headless()
+    backend.apply_dual("HEADLESS-1", Mode(2420, 1668, 120))
+    cmds = _cmds(backend)
+    assert any("output DP-1 enable" in c and "2560x1440" in c for c in cmds)
+    assert any("output DP-2 enable" in c and "1920x1080" in c for c in cmds)
+    # ...and the VDD must land past them, not on top of them at 0.
+    assert any("output HEADLESS-1 enable" in c and "position 4480 0" in c for c in cmds)
+
+
+def test_sway_dual_applies_the_baselines_scale():
+    """rightmost_edge() divides by scale, so an unapplied scale silently puts
+    the VDD on top of a real monitor."""
+    baseline = {"outputs": [
+        {"name": "DP-1", "enabled": True, "width": 2560, "height": 1440, "refresh": 60,
+         "x": 0, "y": 0, "scale": 2.0},
+    ]}
+    backend = _sway_after_headless()
+    backend.apply_dual("HEADLESS-1", Mode(2420, 1668, 120), baseline)
+    cmds = _cmds(backend)
+    assert any("output DP-1 enable" in c and "scale 2.0" in c for c in cmds)
+    assert any("output HEADLESS-1 enable" in c and "position 1280 0" in c for c in cmds)
