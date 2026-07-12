@@ -12,6 +12,8 @@
 #include <display_device/json.h>
 #include <display_device/retry_scheduler.h>
 #include <display_device/settings_manager_interface.h>
+#include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <regex>
 
@@ -30,6 +32,70 @@
 namespace display_device {
   namespace {
     constexpr std::chrono::milliseconds DEFAULT_RETRY_INTERVAL {5000};
+
+    /**
+     * @brief The virtual display the autopilot created for this session, if there is one.
+     *
+     * `zenith-display` records the display it just made in its state file. Reading
+     * it is how capture finds a display whose name nobody could have known in
+     * advance — spawn it on app launch, tear it down on quit, and its connector
+     * name is whatever the kernel handed out this time.
+     *
+     * Empty when no session is live, so a plain desktop stream is untouched.
+     */
+    std::string zenith_vdd_output() {
+#ifdef __linux__
+      namespace fs = std::filesystem;
+
+      const auto *xdg_state {std::getenv("XDG_STATE_HOME")};
+      const auto *home {std::getenv("HOME")};
+      fs::path base;
+      if (xdg_state && *xdg_state) {
+        base = fs::path {xdg_state};
+      } else if (home && *home) {
+        base = fs::path {home} / ".local" / "state";
+      } else {
+        return {};
+      }
+
+      std::ifstream state {base / "zenith" / "display" / "snapshot.json"};
+      if (!state) {
+        return {};  // no live session — nothing was spawned
+      }
+
+      // The one field that matters, without dragging a JSON parser into this TU:
+      //   "vdd_output": "DVI-I-1",
+      const std::string doc {std::istreambuf_iterator<char> {state}, std::istreambuf_iterator<char> {}};
+      const std::regex field {R"RE("vdd_output"\s*:\s*"([^"]+)")RE"};
+      std::smatch match;
+      if (!std::regex_search(doc, match, field)) {
+        return {};
+      }
+      const std::string name {match[1].str()};
+
+      // Only if the display is really there. A snapshot outlives a session that
+      // crashed, and aiming capture at a display that no longer exists is worse
+      // than never having looked: the stream fails instead of falling back to the
+      // desktop the user still has in front of them.
+      std::error_code ec;
+      for (const auto &entry : fs::directory_iterator {"/sys/class/drm", ec}) {
+        const auto connector {entry.path().filename().string()};  // e.g. card1-DVI-I-1
+        if (!connector.ends_with("-" + name)) {
+          continue;
+        }
+        std::ifstream status_file {entry.path() / "status"};
+        std::string status;
+        if (status_file >> status && status == "connected") {
+          return name;
+        }
+      }
+      return {};
+#else
+      // Windows spawns its virtual display through an Indirect Display Driver,
+      // which Windows itself names and enumerates; there is no connector to read.
+      return {};
+#endif
+    }
 
     /**
      * @brief A global for the settings manager interface and other settings whose lifetime is managed by `display_device::init(...)`.
@@ -746,6 +812,20 @@ namespace display_device {
   }
 
   std::string map_output_name(const std::string &output_name) {
+    // A virtual display the autopilot spawned for *this* session is what the
+    // user asked to stream — its prep command created it moments ago, at exactly
+    // this client's resolution — so it outranks whatever the config says.
+    //
+    // It has to be discovered rather than configured. A forced connector is
+    // permanent hardware, so `output_name = DP-1` can be written down once and
+    // trusted forever; a display that is created when the app launches and
+    // destroyed when it quits has no stable name to write down. Point the config
+    // at one and it is wrong the moment the display is torn down and remade.
+    if (const auto vdd {zenith_vdd_output()}; !vdd.empty()) {
+      BOOST_LOG(info) << "Capturing the virtual display Zenith created for this session: "sv << vdd;
+      return vdd;
+    }
+
     std::lock_guard lock {DD_DATA.mutex};
     if (!DD_DATA.sm_instance) {
       // Fallback to giving back the output name if the platform is not supported.
