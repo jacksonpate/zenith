@@ -404,6 +404,17 @@ def cmd_setup(args) -> int:
     if chosen:
         print(f"setup complete — provider ready: {chosen.name}")
         return EXIT_OK
+
+    pending = [e["provider"] for e in report if e.get("reboot_required")]
+    if pending:
+        # The install worked; it is simply not live yet. Saying "no provider is
+        # ready" here would send the user hunting for a problem that does not
+        # exist.
+        print(f"\nsetup installed {', '.join(pending)}, but an image-based system "
+              "only picks up a kernel module at boot.")
+        print("Reboot, then re-run `zenith-display doctor` to confirm.")
+        return EXIT_OK
+
     print("setup finished but no provider is ready; see `zenith-display doctor`")
     return EXIT_NO_PROVIDER
 

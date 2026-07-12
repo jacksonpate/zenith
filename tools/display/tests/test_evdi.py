@@ -67,3 +67,26 @@ def test_a_normal_distro_does_not_use_rpm_ostree(monkeypatch):
     assert any(t[:2] == ["apt-get", "install"] for t in runner.trace)
     assert not any(t[0] == "rpm-ostree" for t in runner.trace)
     assert provider.reboot_required is False
+
+
+def test_setup_reports_a_pending_reboot_as_success(ostree, capsys, monkeypatch):
+    """A layered module that only needs a reboot is not a failed setup. Printing
+    'no provider is ready' sends the user hunting for a problem that does not
+    exist.
+
+    Pinned to a synthetic machine on purpose: `cmd_setup` detects the real host,
+    so without this the result depends on whatever displays the developer
+    happens to have plugged in.
+    """
+    from types import SimpleNamespace
+
+    from zenith_display import cli, providers
+
+    monkeypatch.setattr(cli.detect_mod, "detect", lambda runner=None: _env())
+    monkeypatch.setattr(providers, "chain_for", lambda env: [evdi.EvdiProvider()])
+    monkeypatch.setattr(cli, "Runner", lambda dry_run=False: _runner_without_the_module())
+
+    rc = cli.cmd_setup(SimpleNamespace(dry_run=False, strict=False, verbose=False))
+    out = capsys.readouterr().out
+    assert "reboot" in out.lower(), out
+    assert rc == cli.EXIT_OK

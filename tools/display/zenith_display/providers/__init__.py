@@ -119,7 +119,8 @@ def choose(env, runner: Runner, bootstrap: bool = False):
         ok, reason = provider.probe(env, runner)
         if not ok and bootstrap and selected is None and provider.ensure(env, runner):
             ok, reason = provider.probe(env, runner)
-        report.append({"provider": provider.name, "available": ok, "reason": reason})
+        report.append({"provider": provider.name, "available": ok, "reason": reason,
+                       "reboot_required": getattr(provider, "reboot_required", False)})
         if ok and selected is None:
             selected = provider
     return selected, report
