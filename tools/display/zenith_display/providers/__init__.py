@@ -80,8 +80,10 @@ def chain_for(env) -> List[VddProvider]:
      KwinVirtualProvider, EvdiProvider, DrmDebugfsProvider) = _classes()
 
     desktop = env.desktop
-    chain: List[VddProvider] = [ForcedConnectorProvider()]  # existing fleet VDDs first
+    chain: List[VddProvider] = []
 
+    # Compositor-native first where the session offers one: no kernel module, no
+    # root, and the display is theirs to create and destroy.
     if env.session_type == "wayland":
         if "hyprland" in desktop or env.tools.get("hyprctl"):
             chain.append(HyprlandProvider())
@@ -90,7 +92,16 @@ def chain_for(env) -> List[VddProvider]:
         if "kde" in desktop:
             chain.append(KwinVirtualProvider())
 
+    # Then evdi, which does everywhere what those do on their own compositor.
     chain.append(EvdiProvider())
+
+    # A forced connector is permanent hardware state: an EDID pinned to a real
+    # port at boot. Nothing creates it and nothing can destroy it — `restore`
+    # can only switch the output off, which is why it leaves a ghost monitor in
+    # the display settings between sessions, and why there can only ever be one.
+    # It stays supported for machines already provisioned that way; it is not
+    # something a new machine should land on.
+    chain.append(ForcedConnectorProvider())
     chain.append(DrmDebugfsProvider())
     return chain
 
