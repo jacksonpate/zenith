@@ -117,15 +117,28 @@ def chain_for(env) -> List[VddProvider]:
 def choose(env, runner: Runner, bootstrap: bool = False):
     """Walk the chain; returns (provider, report) where report lists decisions.
 
-    ``bootstrap=True`` (used by `zenith-display setup` only) lets a provider
-    run its ensure() — module loads, package installs — and only while no
-    earlier provider has already qualified.
+    ``bootstrap=True`` (used by `zenith-display setup` only) lets a provider run
+    its ensure() — module loads, package installs, helper + sudoers install — and
+    only while no earlier provider has already qualified, so a machine that can
+    borrow a spare port never gets a kernel module installed behind its back.
+
+    Setup runs ensure() *whether or not* probe already passes, and that is the
+    whole point rather than a detail. Setup runs as root; streaming does not. A
+    provider can be perfectly usable by root and useless to the user who will
+    actually start the stream — drm-debugfs is exactly that, because root writes
+    the two kernel files directly while everyone else needs the helper and its
+    sudoers rule. Gate ensure() on probe() and setup asks root "can you do this?",
+    hears "yes", installs nothing, and reports success. The user then finds no
+    helper and falls through to a kernel module, on hardware that needed none.
+
+    So: ensure() is what setup is *for*. It is idempotent; call it.
     """
     report = []
     selected: Optional[VddProvider] = None
     for provider in chain_for(env):
         ok, reason = provider.probe(env, runner)
-        if not ok and bootstrap and selected is None and provider.ensure(env, runner):
+        if bootstrap and selected is None:
+            provider.ensure(env, runner)
             ok, reason = provider.probe(env, runner)
         report.append({"provider": provider.name, "available": ok, "reason": reason,
                        "reboot_required": getattr(provider, "reboot_required", False)})

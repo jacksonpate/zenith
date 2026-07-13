@@ -107,9 +107,13 @@ class DrmDebugfsProvider(VddProvider):
         spare = self._pick_connector(env)
         if not spare:
             return False, "no borrowable disconnected connector"
-        if _helper() or env.is_root:
-            return True, f"can borrow {spare.name}"
-        return False, "the privileged helper is not installed (run `sudo zenith-display setup`)"
+        # The helper is required even for root — `_run` drives it either way — so
+        # "I am root, therefore I can do this" was never true, merely plausible.
+        # It made `sudo zenith-display setup` report a provider it had not
+        # installed, and left the user, who is not root, with nothing.
+        if not _helper():
+            return False, "the privileged helper is not installed (run `sudo zenith-display setup`)"
+        return True, f"can borrow {spare.name}"
 
     def ensure(self, env, runner: Runner) -> bool:
         """Install the helper and the one sudoers rule that lets it run.

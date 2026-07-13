@@ -82,3 +82,57 @@ def test_it_never_borrows_the_laptop_panel(helper):
                       status="disconnected", enabled=False, driver="nvidia")
     ok, _ = DrmDebugfsProvider().probe(_env(connectors=[panel]), FakeRunner())
     assert not ok
+
+
+def test_setup_installs_the_helper_even_though_root_could_manage_without_it(monkeypatch):
+    """`sudo zenith-display setup` printed "provider ready: drm-debugfs" and
+    installed nothing.
+
+    Setup runs as root; streaming does not. Root can write the two kernel files
+    directly, so probe() said yes — and because ensure() only ran when probe()
+    said no, the helper and its sudoers rule were never installed. The user, who
+    is not root, then found no helper and fell through to evdi: a kernel module,
+    on hardware that needed none.
+
+    ensure() is what setup is *for*. It must run whether or not probe passes.
+    """
+    from zenith_display import providers
+    from zenith_display.providers import drm_debugfs
+
+    ensured = []
+
+    class Fake(drm_debugfs.DrmDebugfsProvider):
+        def probe(self, env, runner):
+            # What root sees before setup: capable, but nothing installed.
+            return (True, "can borrow DP-1") if ensured else (False, "no helper")
+
+        def ensure(self, env, runner):
+            ensured.append(True)
+            return True
+
+    monkeypatch.setattr(providers, "chain_for", lambda env: [Fake()])
+    chosen, _report = providers.choose(_root_env(), FakeRunner({}), bootstrap=True)
+
+    assert ensured, "setup must install the helper, not merely ask root if it could cope"
+    assert chosen is not None
+
+
+def test_root_without_the_helper_is_not_ready(monkeypatch):
+    """`_run` drives the helper even as root, so "I am root" was never the same
+    thing as "this will work" — it just looked like it."""
+    from zenith_display.providers import drm_debugfs
+
+    monkeypatch.setattr(drm_debugfs, "_helper", lambda: None)
+    ok, reason = drm_debugfs.DrmDebugfsProvider().probe(_root_env(), FakeRunner({}))
+    assert not ok
+    assert "helper" in reason
+
+
+def _root_env():
+    from zenith_display.detect import Connector, Environment
+    return Environment(
+        session_type="wayland", desktop="kde", distro="fedora", tools={},
+        connectors=[Connector(sysfs="/sys/class/drm/card1-DP-1", name="DP-1",
+                              status="disconnected", enabled=False, monitor=None,
+                              is_vdd=False, driver="nvidia")],
+        is_root=True, has_passwordless_sudo=True)
