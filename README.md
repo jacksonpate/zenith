@@ -25,11 +25,19 @@ native way on Linux (PipeWire, KMS/DRM, Wayland) and with a bundled signed drive
 with NVIDIA **and** AMD as first-class citizens. Install it, pick **Headless** in Moonlight, and
 a virtual display spins up at your client's exact resolution and refresh. No extra steps.
 
-- 🖥️ **Plug-and-play virtual displays** — "Headless" and "Extend" apps work out of the
-  box on Linux (KDE, GNOME, Sway/wlroots, Cinnamon — via a provider chain of forced-connector,
-  compositor APIs, and a universal EVDI fallback that installs itself) and on Windows (bundled
-  signed SudoVDA driver). The virtual display is born at the client's mode, so you stream at
-  the right resolution the moment you connect. *Shipped.*
+- 🖥️ **Plug-and-play virtual displays** — "Headless" and "Dual" work out of the box on
+  Linux (KDE, GNOME, Sway/wlroots, Cinnamon) and on Windows (bundled signed SudoVDA driver).
+  The display is *born when the app launches and destroyed when it quits*, at exactly the
+  client's resolution and refresh — connect from a tablet, quit, pick up on a phone, and the
+  phone gets its own screen rather than the tablet's. *Shipped.*
+- 📍 **It stays where you put it** — drag the streaming display below your monitor, set a zoom
+  you can read from the sofa, and it comes back there next session, even if you rezoomed your
+  monitor or connected from a different device in between. *Shipped.*
+- 🔌 **No kernel module on most machines** — if the host has a spare port, Zenith borrows it:
+  a generated EDID on a real connector, on the same GPU that will encode it. No DKMS, no
+  Secure Boot enrolment, no reboot. Machines with every port occupied fall back to EVDI, which
+  `zenith-display setup` installs — or builds from source where no distro packages it (Arch).
+  *Shipped.*
 - 🎤 **Remote microphone** — your phone's mic shows up on the host as a real input device
   ("Zenith Mic") that Discord and games can use. On by default. *Shipped.*
 - 📋 **Clipboard sync, both ways** — copy text or an image on either end, paste on the other.
@@ -63,6 +71,16 @@ name, and config directory — so an existing Sunshine's pairings and settings c
 > "Windows protected your PC." Click **More info → Run anyway**.
 
 Prefer to build from source? See the [local build notes](docs/building_zenith_local.md).
+
+## Community
+
+Questions, bug reports, or you got it working on something unusual — come say so.
+
+- 🐛 **[Issues](https://github.com/jacksonpate/zenith/issues)** — bugs and feature requests.
+
+If a virtual display misbehaves, `zenith-display doctor` prints what Zenith can see of your
+machine — session, compositor, connectors, and which provider it would use and why. Paste that
+into an issue and you have skipped three rounds of back-and-forth.
 
 ## Credits & license
 
