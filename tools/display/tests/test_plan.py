@@ -116,3 +116,25 @@ def test_forced_connector_still_claims_a_real_provisioned_connector():
                      enabled=True, monitor="ZenithVDD", is_vdd=True, driver="amdgpu")
     ok, reason = provider.probe(_env(connectors=[real]), FakeRunner())
     assert ok and "DP-1" in reason
+
+
+def test_a_fallback_provider_can_be_pinned_for_testing():
+    """Testing a *fallback* otherwise means physically occupying every port on the
+    machine so the provider above it stands aside. Nobody does that, so fallbacks
+    go unexercised until a user with an unlucky machine finds them — which is how
+    "evdi streams black on a discrete GPU" became a claim nobody had checked."""
+    from zenith_display import providers
+
+    env = _env()
+    _chosen, report = providers.choose(env, FakeRunner({}), only="evdi")
+    assert [r["provider"] for r in report] == ["evdi"]
+
+
+def test_pinning_a_provider_that_is_not_in_the_chain_is_an_error():
+    """Silently choosing something else would make a test look like it passed."""
+    import pytest
+
+    from zenith_display import providers
+
+    with pytest.raises(RuntimeError, match="no provider named"):
+        providers.choose(_env(), FakeRunner({}), only="nonsense")

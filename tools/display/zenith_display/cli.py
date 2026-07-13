@@ -60,7 +60,7 @@ def cmd_plan(args) -> int:
     runner = Runner(dry_run=True)
     env = detect_mod.detect(runner=runner)
     backend = get_backend(env, runner)
-    chosen, report = providers.choose(env, runner)
+    chosen, report = providers.choose(env, runner, only=getattr(args, 'provider', None))
     plan = {
         "mode": str(client_mode()),
         "backend": backend.name if backend else None,
@@ -92,7 +92,7 @@ def _apply(kind: str, args) -> int:
                         f"no layout backend for session={env.session_type} "
                         f"desktop={env.desktop or '-'} (see `zenith-display doctor`)")
 
-    provider, report = providers.choose(env, runner)
+    provider, report = providers.choose(env, runner, only=getattr(args, 'provider', None))
     if provider is None:
         for entry in report:
             log.info("  %-18s %s", entry["provider"], entry["reason"])
@@ -364,7 +364,7 @@ def cmd_restore(args) -> int:
         log.info("nothing to restore")
         return EXIT_OK
 
-    provider, _report = providers.choose(env, runner)
+    provider, _report = providers.choose(env, runner, only=getattr(args, 'provider', None))
     vdds = _known_vdds(env, runner, provider, None) if provider else {
         c.name for c in env.vdd_connectors}
 
@@ -426,7 +426,7 @@ def cmd_remember(args) -> int:
         log.error("no layout backend here (see `zenith-display doctor`)")
         return EXIT_NO_BACKEND
 
-    provider, _report = providers.choose(env, runner)
+    provider, _report = providers.choose(env, runner, only=getattr(args, 'provider', None))
     vdds = _known_vdds(env, runner, provider, None) if provider else {
         c.name for c in env.vdd_connectors}
     payload = _strip(backend.snapshot(), vdds)
@@ -460,7 +460,7 @@ def cmd_setup(args) -> int:
     """
     runner = Runner(dry_run=args.dry_run)
     env = detect_mod.detect(runner=runner)
-    chosen, report = providers.choose(env, runner, bootstrap=True)
+    chosen, report = providers.choose(env, runner, bootstrap=True, only=getattr(args, 'provider', None))
     for entry in report:
         state = "ok" if entry["available"] else "--"
         print(f"  {state} {entry['provider']:<18} {entry['reason']}")
@@ -486,7 +486,7 @@ def cmd_doctor(args) -> int:
     runner = Runner(dry_run=True)
     env = detect_mod.detect(runner=runner)
     backend = get_backend(env, runner)
-    chosen, report = providers.choose(env, runner)
+    chosen, report = providers.choose(env, runner, only=getattr(args, 'provider', None))
 
     print(f"zenith-display {__version__}")
     print(f"  session   : {env.session_type}  desktop: {env.desktop or '-'}  distro: {env.distro or '-'}")
@@ -518,6 +518,10 @@ def main(argv=None) -> int:
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--dry-run", action="store_true",
                         help="preview: queries run, mutations are only logged")
+    parser.add_argument("--provider", metavar="NAME",
+                        help="force one VDD provider (drm-debugfs, evdi, ...) instead of "
+                             "walking the chain; for testing a fallback without having to "
+                             "occupy every port on the machine")
     parser.add_argument("--strict", action="store_true",
                         help="exit nonzero instead of degrading to the plain desktop")
     sub = parser.add_subparsers(dest="command", required=True)

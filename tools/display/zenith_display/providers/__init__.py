@@ -114,7 +114,7 @@ def chain_for(env) -> List[VddProvider]:
     return chain
 
 
-def choose(env, runner: Runner, bootstrap: bool = False):
+def choose(env, runner: Runner, bootstrap: bool = False, only: Optional[str] = None):
     """Walk the chain; returns (provider, report) where report lists decisions.
 
     ``bootstrap=True`` (used by `zenith-display setup` only) lets a provider run
@@ -133,9 +133,20 @@ def choose(env, runner: Runner, bootstrap: bool = False):
 
     So: ensure() is what setup is *for*. It is idempotent; call it.
     """
+    chain = chain_for(env)
+    if only:
+        # Pin the chain to one provider. Without this, testing a *fallback* means
+        # physically occupying every port on the machine so the provider above it
+        # stands aside — which is not a test anybody runs, so fallbacks go
+        # unexercised until a user with an unlucky machine finds them.
+        chain = [p for p in chain if p.name == only]
+        if not chain:
+            names = ", ".join(p.name for p in chain_for(env))
+            raise RuntimeError(f"no provider named {only!r} in this chain ({names})")
+
     report = []
     selected: Optional[VddProvider] = None
-    for provider in chain_for(env):
+    for provider in chain:
         ok, reason = provider.probe(env, runner)
         if bootstrap and selected is None:
             provider.ensure(env, runner)
