@@ -8,10 +8,13 @@ the client's refresh -> 120 -> 60 -> the output's preferred mode.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Iterable, List, Optional
 
 from ..modes import Mode
 from . import LayoutBackend, OutputState
+
+log = logging.getLogger("zenith-display")
 
 
 class KScreenBackend(LayoutBackend):
@@ -22,6 +25,27 @@ class KScreenBackend(LayoutBackend):
         if not res.ok:
             raise RuntimeError(f"kscreen-doctor -j failed: {res.stderr.strip()}")
         return json.loads(res.stdout)
+
+    def _apply_args(self, args: List[str]) -> None:
+        """Run kscreen-doctor, and actually find out whether it worked.
+
+        kscreen-doctor reports a rejected configuration by printing ``applying
+        config failed!`` — on *stdout*, with an exit status of *zero*, and nothing
+        on stderr. So a layout KDE refused outright is indistinguishable from a
+        layout it applied, unless the output is read.
+
+        This is not a footnote. Zenith enables the virtual display in the same
+        atomic call that positions everything else, so a refusal means no virtual
+        display at all — and for as long as the exit status was believed, that
+        arrived as a cheerful "dual active" in the log while the user sat looking
+        at a plain mirrored desktop. Every rollback and fallback downstream of here
+        depends on this raising.
+        """
+        res = self.runner.run(["kscreen-doctor", *args], timeout=15, check=True)
+        message = f"{res.stdout}\n{res.stderr}"
+        for line in message.splitlines():
+            if "failed" in line.lower():
+                raise RuntimeError(f"kscreen rejected the layout: {line.strip()}")
 
     @staticmethod
     def _mode_str(output: dict) -> tuple:
@@ -99,7 +123,7 @@ class KScreenBackend(LayoutBackend):
         for out in self.outputs():
             if out.name != vdd and out.connected and out.enabled:
                 args.append(f"output.{out.name}.disable")
-        self.runner.run(["kscreen-doctor", *args], timeout=15, check=True)
+        self._apply_args(args)
 
     def apply_dual(self, vdd: str, mode: Mode, baseline: Optional[dict] = None,
                    placement: Optional[dict] = None) -> None:
@@ -127,31 +151,78 @@ class KScreenBackend(LayoutBackend):
         live = self.outputs()
         lit = [o for o in live if o.enabled and o.name != vdd]
 
-        args: List[str] = []
+        rebuild: List[str] = []
         if lit:
             targets = lit  # the user's desk, exactly as they left it
         else:
             targets = [o for o in self.dual_targets(vdd, baseline) if o.name != vdd]
             for out in targets:
                 if not out.enabled:
-                    args.append(f"output.{out.name}.disable")
+                    rebuild.append(f"output.{out.name}.disable")
                     continue
-                args.append(f"output.{out.name}.enable")
+                rebuild.append(f"output.{out.name}.enable")
                 if out.width:
-                    args.append(
+                    rebuild.append(
                         f"output.{out.name}.mode.{out.width}x{out.height}@{round(out.refresh)}")
-                args.append(f"output.{out.name}.position.{out.x},{out.y}")
                 if out.scale:
-                    args.append(f"output.{out.name}.scale.{out.scale}")
+                    rebuild.append(f"output.{out.name}.scale.{out.scale}")
                 if out.priority:
-                    args.append(f"output.{out.name}.priority.{out.priority}")
+                    rebuild.append(f"output.{out.name}.priority.{out.priority}")
 
+        # Rebuilding a dark desk means stating where its monitors go. Leaving a lit
+        # one alone means saying nothing about it — not even its position, unless
+        # the whole desk has to slide to keep the layout out of negative space.
+        restate = not lit
+        try:
+            self._apply_args(
+                rebuild + self._vdd_args(vdd, mode, targets, placement, restate))
+        except RuntimeError as exc:
+            # A layout KDE will not take is worse than a layout the user did not
+            # choose, because the refusal is total: the virtual display is enabled
+            # in this same call, so a rejected arrangement is a stream with no
+            # display behind it. Drop the memory and put it somewhere that works.
+            if placement is None:
+                raise
+            log.warning("the remembered placement was rejected (%s); "
+                        "putting the display at the right edge instead", exc)
+            keep_zoom = {"scale": placement.get("scale")}
+            self._apply_args(
+                rebuild + self._vdd_args(vdd, mode, targets, keep_zoom, restate))
+
+    def _vdd_args(self, vdd: str, mode: Mode, targets: List[OutputState],
+                  placement: Optional[dict], restate: bool = False) -> List[str]:
+        """Place the virtual display, and shift the desk out of negative space.
+
+        KDE refuses a layout in which any enabled output has a negative
+        coordinate — "Position of enabled output DP-1 is negative" — and refuses
+        it whole. That is easy to walk into: the position is remembered as an
+        offset from a monitor, and a display tucked slightly left of that monitor
+        has a negative offset. Replay it against a desk whose origin has since
+        moved and the result is off the left edge of the world.
+
+        Translating every screen by the same amount is not a change to the user's
+        arrangement; the compositor renormalises the origin after every apply
+        anyway. So slide the whole desk back into positive space and keep the
+        relative layout — which is the part the user actually chose.
+        """
         x, y, scale = self.place_vdd(mode, targets, placement)
-        last = max((o.priority for o in targets if o.enabled), default=1)
+        lit = [o for o in targets if o.enabled]
+        shift_x = -min([x] + [o.x for o in lit])
+        shift_y = -min([y] + [o.y for o in lit])
+        shift_x, shift_y = max(shift_x, 0), max(shift_y, 0)
+
+        args: List[str] = []
+        if restate or shift_x or shift_y:
+            # Position only — nothing about their mode or zoom, which are theirs.
+            for out in lit:
+                args.append(
+                    f"output.{out.name}.position.{out.x + shift_x},{out.y + shift_y}")
+
+        last = max((o.priority for o in lit), default=1)
         args += [
             f"output.{vdd}.enable",
             f"output.{vdd}.priority.{last + 1}",  # never primary
-            f"output.{vdd}.position.{x},{y}",
+            f"output.{vdd}.position.{x + shift_x},{y + shift_y}",
         ]
         if scale:
             args.append(f"output.{vdd}.scale.{scale}")
@@ -159,7 +230,7 @@ class KScreenBackend(LayoutBackend):
         # keep. That belongs to whoever is connecting — quit on a tablet, pick up
         # on a phone, and a remembered mode hands the phone the tablet's screen.
         args += self._set_mode_args(vdd, mode, self._vdd_modes(vdd))
-        self.runner.run(["kscreen-doctor", *args], timeout=15, check=True)
+        return args
 
     def relight(self, vdds: Iterable[str] = ()) -> None:
         outs = self.outputs()
@@ -171,7 +242,7 @@ class KScreenBackend(LayoutBackend):
         args = [f"output.{o.name}.enable" for o in monitors if not o.enabled]
         args += [f"output.{o.name}.disable" for o in outs if o.name in vdds and o.enabled]
         if args:
-            self.runner.run(["kscreen-doctor", *args], timeout=15, check=True)
+            self._apply_args(args)
 
     def restore(self, payload: dict) -> None:
         args: List[str] = []
@@ -189,4 +260,4 @@ class KScreenBackend(LayoutBackend):
             else:
                 args.append(f"output.{name}.disable")
         if args:
-            self.runner.run(["kscreen-doctor", *args], timeout=15, check=True)
+            self._apply_args(args)

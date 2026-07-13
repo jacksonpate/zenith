@@ -85,10 +85,55 @@ def test_dual_relights_the_monitors_headless_turned_off(fixture_text):
     assert "output.eDP-1.enable" in joined
     assert "output.HDMI-A-1.enable" in joined
     assert "output.DP-1.enable" in joined
-    # ...and back where they were, not at whatever the compositor last held.
+    # ...back at the mode and zoom they had, not whatever the compositor last held
     assert "output.eDP-1.mode.2560x1600@165" in joined
-    assert "output.eDP-1.position.-1707,0" in joined
     assert "output.eDP-1.scale.1.5" in joined
+    # ...and translated into positive space. The user's layout put eDP-1 at
+    # x=-1707, which is a perfectly ordinary thing to own — a monitor to the left
+    # of the origin — but KDE refuses to enable an output at a negative
+    # coordinate and refuses the whole config with it. Sliding every screen by
+    # the same amount preserves the arrangement, which is the part they chose.
+    assert "output.eDP-1.position.0,0" in joined
+    assert "output.HDMI-A-1.position.1723,0" in joined   # 16 + 1707
+    assert "position.-" not in joined, f"a negative coordinate sinks the apply: {joined}"
+
+
+def test_a_negative_coordinate_is_never_emitted(fixture_text):
+    """KDE: "Position of enabled output DP-1 is negative (-16, 1,080)" — printed on
+    stdout, with an exit status of zero, so for a long time nothing noticed.
+
+    The refusal is total, and the virtual display is enabled in the same call, so
+    this did not produce a slightly-wrong desk. It produced no streaming display
+    at all, and a plain mirrored desktop with no error anywhere the user could see.
+    """
+    backend = _backend(fixture_text)
+    # The VDD remembered as sitting slightly left of a monitor now at x=0.
+    backend.apply_dual("DP-1", Mode(2420, 1668, 120), None,
+                       placement={"anchor": "HDMI-A-1", "dx": -16, "dy": 1080,
+                                  "scale": 1.25})
+    joined = " ".join(backend.runner.trace[-1])
+    assert "position.-" not in joined, f"emitted a negative coordinate: {joined}"
+
+
+def test_kscreen_failing_with_exit_status_zero_is_still_a_failure(fixture_text):
+    """kscreen-doctor prints "applying config failed!" on stdout and exits 0.
+
+    Believing the exit status meant Zenith logged "dual active" at the same moment
+    KDE threw the layout away. Every rollback downstream depends on this raising.
+    """
+    import pytest
+
+    from zenith_display.runner import Result
+
+    rejection = Result(
+        argv=[], returncode=0,   # <- zero. That is the entire problem.
+        stdout="Enabling output 2\n"
+               "applying config failed! Position of enabled output DP-1 is negative (-16, 1,080)")
+    backend = KScreenBackend(FakeRunner({
+        ("kscreen-doctor", "output.DP-1.enable"): rejection,
+    }))
+    with pytest.raises(RuntimeError, match="rejected"):
+        backend._apply_args(["output.DP-1.enable"])
 
 
 def test_dual_without_a_baseline_still_relights_connected_monitors(fixture_text):
@@ -107,7 +152,9 @@ def test_dual_puts_the_vdd_past_the_baseline_not_on_top_of_it(fixture_text):
     backend = _backend_after_headless(fixture_text)
     backend.apply_dual("DP-1", Mode(2420, 1668, 120), USER_LAYOUT)
     joined = " ".join(backend.runner.trace[-1])
-    assert "output.DP-1.position.1936,0" in joined  # 16 + 1920 logical px
+    # Right of both relit monitors, in the same positive space they were slid into:
+    # eDP-1 (1706 logical) at 0, HDMI-A-1 (1920) at 1723, so the desk ends at 3643.
+    assert "output.DP-1.position.3643,0" in joined
 
 
 def test_relight_restores_a_plain_desktop(fixture_text):

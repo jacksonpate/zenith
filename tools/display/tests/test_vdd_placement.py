@@ -136,6 +136,34 @@ def test_dual_from_headless_relights_the_monitors(fixture_text):
     assert "output.HDMI-A-1.enable" in argv, f"left the desk dark: {argv}"
 
 
+def test_a_display_left_of_the_monitor_stays_left_when_a_smaller_client_connects(fixture_text):
+    """Park it left of the monitor on a tablet, come back on a phone, and the spot
+    used to be quietly traded for the right edge.
+
+    A display sitting to the *left* is held there by its right edge, and its right
+    edge is a function of its width — which belongs to the client. Remember the
+    top-left corner and a narrower client no longer reaches the monitor: a gap,
+    which KDE refuses, which costs the whole layout. Remember the edge that is
+    doing the touching instead.
+    """
+    backend = _backend(fixture_text)
+    # HDMI-A-1 is lit at x=16. The tablet's display (1936 logical wide) sat hard
+    # against its left edge: x = 16 - 1936 = -1920, so its right edge is at 16.
+    left_of_it = {"anchor": "HDMI-A-1", "side": "left",
+                  "dx": -1920, "dy": 0, "dx2": 0, "dy2": 1334, "scale": 1.25}
+
+    # Now a phone connects: 1872 logical wide, 64px narrower than the tablet.
+    backend.apply_dual("DP-1", Mode(2340, 1080, 60), None, placement=left_of_it)
+    argv = " ".join(backend.runner.trace[-1])
+
+    # Its right edge must still land on the monitor's left edge. It wants x =
+    # 16 - 1872 = -1856, so the whole desk shifts right by 1856: the display goes
+    # to 0 and the monitor to 1872 — which is exactly where the display now ends.
+    assert "output.DP-1.position.0,0" in argv, f"lost its spot: {argv}"
+    assert "output.HDMI-A-1.position.1872,0" in argv, f"no longer touching: {argv}"
+    assert "position.-" not in argv
+
+
 def test_a_new_client_gets_its_own_resolution_not_the_last_one(fixture_text):
     """Quit on the iPad, connect from the phone, and the streaming display came
     back at the iPad's 2420x1668.

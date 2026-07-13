@@ -424,7 +424,8 @@ class LayoutBackend:
         valid and never a surprise.
         """
         scale = float((placement or {}).get("scale") or 0) or None
-        vdd = Rect(0, 0, int(mode.width / (scale or 1.0)), int(mode.height / (scale or 1.0)))
+        width = int(mode.width / (scale or 1.0))
+        height = int(mode.height / (scale or 1.0))
         lit = [o.rect for o in targets if o.enabled]
         anchor = self.anchor_of(targets)
 
@@ -435,7 +436,25 @@ class LayoutBackend:
                          if o.enabled and o.name == placement.get("anchor")), anchor)
             x = base.x + int(placement["dx"])
             y = base.y + int(placement["dy"] or 0)
-            if is_coherent(lit + [Rect(x, y, vdd.w, vdd.h)]):
+
+            # Which edge of the display touches the monitor decides which corner of
+            # it we are entitled to remember.  A display sitting *left* of a monitor
+            # is held there by its right edge, and its right edge is a function of
+            # its width — which belongs to the client, and changes the moment a
+            # phone connects instead of a tablet.  Replay the top-left corner and a
+            # narrower client leaves a gap where the display no longer reaches the
+            # monitor; a wider one drives it underneath.  Either way the layout is
+            # refused, and the remembered spot is silently traded for the right edge.
+            #
+            # So for those two sides, pin the edge that is actually doing the
+            # touching and let the far corner fall where the client's size puts it.
+            side = placement.get("side")
+            if side == "left" and placement.get("dx2") is not None:
+                x = base.x + int(placement["dx2"]) - width
+            elif side == "above" and placement.get("dy2") is not None:
+                y = base.y + int(placement["dy2"]) - height
+
+            if is_coherent(lit + [Rect(x, y, width, height)]):
                 return x, y, scale
             log.debug("remembered VDD offset no longer fits the desk — snapping right")
 
@@ -445,13 +464,28 @@ class LayoutBackend:
 
     @staticmethod
     def offset_from_anchor(vdd: OutputState, targets: List[OutputState]) -> dict:
-        """Record the VDD's spot as an offset from a monitor, for `place_vdd`."""
+        """Record the VDD's spot as an offset from a monitor, for `place_vdd`.
+
+        Both corners, and which side it was on.  The far corner is the one that
+        matters when the display is held against the monitor by its right or
+        bottom edge, because the near corner then depends on the client's
+        resolution — see `place_vdd`.
+        """
         anchor = LayoutBackend.anchor_of([o for o in targets if o.name != vdd.name])
         if anchor is None:
             return {}
-        return {"anchor": anchor.name,
-                "dx": vdd.x - anchor.x,
-                "dy": vdd.y - anchor.y}
+        v, a = vdd.rect, anchor.rect
+        if v.right <= a.x:
+            side = "left"
+        elif v.x >= a.right:
+            side = "right"
+        elif v.bottom <= a.y:
+            side = "above"
+        else:
+            side = "below"
+        return {"anchor": anchor.name, "side": side,
+                "dx": v.x - a.x, "dy": v.y - a.y,
+                "dx2": v.right - a.x, "dy2": v.bottom - a.y}
 
 
 def get_backend(env, runner: Runner) -> Optional[LayoutBackend]:
