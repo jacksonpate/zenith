@@ -195,16 +195,27 @@ class EvdiProvider(VddProvider):
             return
 
         version = _SOURCE_TAG.lstrip("v")
-        src = f"/usr/src/evdi-{version}"
+        checkout = f"/usr/src/zenith-evdi-{version}"
         log.info("building evdi %s from source (no packaged module on this distro)", version)
 
-        if not os.path.isdir(src):
-            clone = ["git", "clone", "--depth", "1", "--branch", _SOURCE_TAG, _SOURCE_URL, src]
+        if not os.path.isdir(checkout):
+            clone = ["git", "clone", "--depth", "1", "--branch", _SOURCE_TAG,
+                     _SOURCE_URL, checkout]
             if not runner.run(self._root_wrap(env, clone), timeout=600).ok:
                 log.warning("could not fetch the evdi source")
                 return
 
-        # DKMS keys off dkms.conf's PACKAGE_VERSION, which need not match the tag.
+        # DKMS wants dkms.conf at the top of /usr/src/<name>-<version>. evdi keeps
+        # it one level down, under module/ — so the module subtree, not the repo,
+        # is what gets handed over. Point DKMS at the repo root and it simply
+        # reports that dkms.conf does not exist.
+        src = f"/usr/src/evdi-{version}"
+        if not os.path.isfile(f"{src}/dkms.conf"):
+            copy = ["cp", "-rT", f"{checkout}/module", src]
+            if not runner.run(self._root_wrap(env, copy), timeout=120).ok:
+                log.warning("could not stage the evdi module tree for dkms")
+                return
+
         runner.run(self._root_wrap(env, ["dkms", "add", "-m", "evdi", "-v", version]), timeout=60)
         built = runner.run(self._root_wrap(env, ["dkms", "install", "-m", "evdi",
                                                  "-v", version, "--force"]), timeout=1800)
@@ -215,7 +226,7 @@ class EvdiProvider(VddProvider):
         runner.run(self._root_wrap(env, ["modprobe", "evdi"]), timeout=30)
 
         if not _libevdi():
-            self._install_library(env, runner, src)
+            self._install_library(env, runner, checkout)
 
     def _install_library(self, env, runner: Runner, src: str) -> None:
         """Build libevdi and put it where the dynamic linker will actually find it.
