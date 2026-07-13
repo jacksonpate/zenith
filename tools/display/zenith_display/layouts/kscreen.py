@@ -86,45 +86,78 @@ class KScreenBackend(LayoutBackend):
                 return out.modes
         return []
 
-    def apply_headless(self, vdd: str, mode: Mode) -> None:
+    def apply_headless(self, vdd: str, mode: Mode,
+                       placement: Optional[dict] = None) -> None:
         args = [f"output.{vdd}.enable", f"output.{vdd}.priority.1"]
+        # Position is meaningless when it is the only display; the zoom is not.
+        # Left alone, the compositor guesses a scale from a physical size the
+        # virtual display does not have — and the guess is what makes the whole
+        # desktop soft and oversized on a stream that is otherwise pixel-exact.
+        if placement and placement.get("scale"):
+            args.append(f"output.{vdd}.scale.{placement['scale']}")
         args += self._set_mode_args(vdd, mode, self._vdd_modes(vdd))
         for out in self.outputs():
             if out.name != vdd and out.connected and out.enabled:
                 args.append(f"output.{out.name}.disable")
         self.runner.run(["kscreen-doctor", *args], timeout=15, check=True)
 
-    def apply_dual(self, vdd: str, mode: Mode, baseline: Optional[dict] = None) -> None:
-        """Put the user's monitors back, then hang the VDD off the right edge.
+    def apply_dual(self, vdd: str, mode: Mode, baseline: Optional[dict] = None,
+                   placement: Optional[dict] = None) -> None:
+        """Hang the virtual display off a desk the user keeps.
 
-        Dual is entered straight out of headless as often as from the desktop,
-        so it restates the whole layout instead of assuming the monitors are
-        still on — they usually are not.  One kscreen-doctor call, so the
-        compositor reconfigures once.
+        Dual is entered straight out of headless as often as from the desktop, so
+        the monitors cannot be assumed to be on — but nor can they be assumed to
+        need moving.  Those are two different situations and they get two different
+        treatments:
+
+        *The monitors are lit.*  Then the desk in front of the user is the desk,
+        whatever they have done to it since the last session.  Restating a
+        remembered mode, position and zoom onto a screen they are looking at is how
+        an in-session zoom change gets silently undone — and how the rescaled screen
+        stops reaching its neighbour, which is a gap, which KDE reverts.  Leave them
+        alone.  Say nothing about them at all.
+
+        *The desk is dark* (we came from headless).  Then it has to be rebuilt, and
+        `dual_targets` rebuilds it from the snapshot as one coherent piece.
+
+        Either way the monitors arrive self-consistent, and only the virtual display
+        is left to position.  One kscreen-doctor call, so the compositor
+        reconfigures once.
         """
-        targets = self.dual_targets(vdd, baseline)
-        args: List[str] = []
-        for out in targets:
-            if not out.enabled:
-                args.append(f"output.{out.name}.disable")
-                continue
-            args.append(f"output.{out.name}.enable")
-            if out.width:
-                args.append(f"output.{out.name}.mode.{out.width}x{out.height}@{round(out.refresh)}")
-            args.append(f"output.{out.name}.position.{out.x},{out.y}")
-            if out.scale:
-                args.append(f"output.{out.name}.scale.{out.scale}")
-            if out.priority:
-                args.append(f"output.{out.name}.priority.{out.priority}")
+        live = self.outputs()
+        lit = [o for o in live if o.enabled and o.name != vdd]
 
-        # The VDD sits after every real monitor: never primary (headless leaves
-        # it at priority 1), and never on top of them at x=0.
+        args: List[str] = []
+        if lit:
+            targets = lit  # the user's desk, exactly as they left it
+        else:
+            targets = [o for o in self.dual_targets(vdd, baseline) if o.name != vdd]
+            for out in targets:
+                if not out.enabled:
+                    args.append(f"output.{out.name}.disable")
+                    continue
+                args.append(f"output.{out.name}.enable")
+                if out.width:
+                    args.append(
+                        f"output.{out.name}.mode.{out.width}x{out.height}@{round(out.refresh)}")
+                args.append(f"output.{out.name}.position.{out.x},{out.y}")
+                if out.scale:
+                    args.append(f"output.{out.name}.scale.{out.scale}")
+                if out.priority:
+                    args.append(f"output.{out.name}.priority.{out.priority}")
+
+        x, y, scale = self.place_vdd(mode, targets, placement)
         last = max((o.priority for o in targets if o.enabled), default=1)
         args += [
             f"output.{vdd}.enable",
-            f"output.{vdd}.priority.{last + 1}",
-            f"output.{vdd}.position.{self.rightmost_edge(targets)},0",
+            f"output.{vdd}.priority.{last + 1}",  # never primary
+            f"output.{vdd}.position.{x},{y}",
         ]
+        if scale:
+            args.append(f"output.{vdd}.scale.{scale}")
+        # The zoom and the spot are the user's; the resolution is not theirs to
+        # keep. That belongs to whoever is connecting — quit on a tablet, pick up
+        # on a phone, and a remembered mode hands the phone the tablet's screen.
         args += self._set_mode_args(vdd, mode, self._vdd_modes(vdd))
         self.runner.run(["kscreen-doctor", *args], timeout=15, check=True)
 

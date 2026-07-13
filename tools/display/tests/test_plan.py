@@ -46,7 +46,9 @@ def test_evdi_outranks_the_forced_connector():
     the forced connector is why a VDD never died when the app quit."""
     names = [p.name for p in chain_for(_env())]
     assert names.index("evdi") < names.index("forced-connector")
-    assert names[-1] == "drm-debugfs"  # last resort, needs root
+    # ...and a borrowed port beats a fabricated device, so it comes first of all:
+    # same GPU as the encoder, and no kernel module to install or sign.
+    assert names.index("drm-debugfs") < names.index("evdi")
 
 
 def test_a_provisioned_connector_is_still_a_fallback():

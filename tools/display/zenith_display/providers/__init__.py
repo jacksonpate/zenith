@@ -92,7 +92,16 @@ def chain_for(env) -> List[VddProvider]:
         if "kde" in desktop:
             chain.append(KwinVirtualProvider())
 
-    # Then evdi, which does everywhere what those do on their own compositor.
+    # A spare port, if the machine has one. It beats a fabricated DRM device on
+    # every axis that matters: the display lives on the GPU that will encode it
+    # (a foreign device's buffer cannot be imported by the encoder — that is an
+    # evdi VDD streaming as a black screen), and it needs no kernel module, so
+    # no DKMS, no akmod, and no Secure Boot key for the user to enrol.
+    chain.append(DrmDebugfsProvider())
+
+    # Then evdi, for the machines with no port to spare — a laptop with every
+    # output in use. It fabricates a display from nothing, at the cost of an
+    # out-of-tree module.
     chain.append(EvdiProvider())
 
     # A forced connector is permanent hardware state: an EDID pinned to a real
@@ -102,7 +111,6 @@ def chain_for(env) -> List[VddProvider]:
     # It stays supported for machines already provisioned that way; it is not
     # something a new machine should land on.
     chain.append(ForcedConnectorProvider())
-    chain.append(DrmDebugfsProvider())
     return chain
 
 

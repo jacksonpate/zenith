@@ -65,11 +65,11 @@ def test_dual_places_vdd_past_the_rightmost_output(fixture_text):
     backend.apply_dual("DP-1", Mode(2420, 1668, 120))
     joined = " ".join(backend.runner.trace[-1])
     assert "output.DP-1.enable" in joined
-    # The VDD lands after every real monitor — never primary (headless leaves it
-    # at priority 1) and never sharing a slot with one of them.
-    assert "output.DP-1.priority.3" in joined
+    # The VDD lands after every lit monitor — never primary (headless leaves it
+    # at priority 1) and never on top of one. HDMI-A-1 is lit at x=16, 1920 wide.
+    assert "output.DP-1.priority.2" in joined
     assert "output.DP-1.priority.1" not in joined
-    assert "position." in joined
+    assert "output.DP-1.position.1936,0" in joined
     assert "disable" not in joined
 
 
