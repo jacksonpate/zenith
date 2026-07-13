@@ -6,6 +6,7 @@
 
 <div align="center">
   <a href="https://github.com/jacksonpate/zenith/actions/workflows/zenith-ci.yml"><img src="https://github.com/jacksonpate/zenith/actions/workflows/zenith-ci.yml/badge.svg" alt="Zenith CI"></a>
+  <a href="https://discord.gg/X7vTVmMBDK"><img src="https://img.shields.io/discord/1526114784808800316?style=flat-square&label=discord&color=8b30d9&logo=discord&logoColor=white" alt="Discord"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-8b30d9?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/platform-linux%20first-a855f7?style=flat-square" alt="Linux first">
   <a href="https://github.com/LizardByte/Sunshine"><img src="https://img.shields.io/badge/forked%20from-LizardByte%2FSunshine-6d1fb8?style=flat-square" alt="Upstream"></a>
@@ -76,6 +77,7 @@ Prefer to build from source? See the [local build notes](docs/building_zenith_lo
 
 Questions, bug reports, or you got it working on something unusual — come say so.
 
+- 💬 **[Discord](https://discord.gg/X7vTVmMBDK)** — support, and where new features get argued about first.
 - 🐛 **[Issues](https://github.com/jacksonpate/zenith/issues)** — bugs and feature requests.
 
 If a virtual display misbehaves, `zenith-display doctor` prints what Zenith can see of your
