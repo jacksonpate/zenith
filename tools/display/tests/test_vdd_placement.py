@@ -34,7 +34,7 @@ def _backend(fixture_text):
 
 # In the fixture: HDMI-A-1 is lit at (16,0), 1920x1080 @ scale 1 -> logical
 # 1920x1080, priority 1 (the anchor). Its right edge is therefore x=1936.
-BELOW_THE_MONITOR = {"anchor": "HDMI-A-1", "dx": -16, "dy": 1080, "scale": 1.25}
+BELOW_THE_MONITOR = {"anchor": "HDMI-A-1", "side": "below", "slide": -16, "scale": 1.25}
 
 
 def test_a_placement_round_trips(tmp_path):
@@ -42,7 +42,7 @@ def test_a_placement_round_trips(tmp_path):
     snapshot.remember_vdd("DP-1", scale=1.25, offset=BELOW_THE_MONITOR, environ=env)
     got = snapshot.remembered_vdd(environ=env)
     assert got["scale"] == 1.25
-    assert got["anchor"] == "HDMI-A-1" and got["dx"] == -16 and got["dy"] == 1080
+    assert got["anchor"] == "HDMI-A-1" and got["side"] == "below" and got["slide"] == -16
 
 
 def test_nothing_remembered_is_not_an_error(tmp_path):
@@ -100,7 +100,8 @@ def test_an_incoherent_memory_is_dropped_rather_than_applied(fixture_text):
     worse than no memory. Drop it and put the display somewhere that works.
     """
     backend = _backend(fixture_text)
-    marooned = {"anchor": "HDMI-A-1", "dx": 0, "dy": 5000, "scale": 1.25}  # miles below
+    marooned = {"anchor": "HDMI-A-1", "side": "below", "slide": 9000,   # miles off to one side
+                "scale": 1.25}
     backend.apply_dual("DP-1", Mode(2420, 1668, 120), None, placement=marooned)
     argv = " ".join(backend.runner.trace[-1])
     assert "output.DP-1.position.16,5080" not in argv, "applied a layout KDE will revert"
@@ -136,6 +137,35 @@ def test_dual_from_headless_relights_the_monitors(fixture_text):
     assert "output.HDMI-A-1.enable" in argv, f"left the desk dark: {argv}"
 
 
+def test_below_survives_the_user_rezooming_the_monitor(fixture_text):
+    """The failure that killed "under" — and "under" is where it usually lives.
+
+    "Below the monitor" means the display's top edge sits on the monitor's bottom
+    edge. That coordinate is not a fact about the streaming display at all: it is
+    the *monitor's* height, and the user rezooms their monitor. Store it, and the
+    next session puts the display back at last week's height while the monitor has
+    since grown to 1271 — they overlap, KDE refuses the layout whole, and the
+    streaming display it would have enabled goes with it.
+
+    Which is why the contact coordinate is derived and never stored.
+    """
+    doc = json.loads(fixture_text("kscreen_silverblue.json"))
+    for out in doc["outputs"]:
+        if out["name"] == "HDMI-A-1":
+            out["pos"] = {"x": 0, "y": 0}
+            out["scale"] = 0.85          # the user zoomed out: 1080 -> 1271 tall
+    backend = KScreenBackend(FakeRunner({"kscreen-doctor": json.dumps(doc)}))
+
+    # ...but the spot was recorded when the monitor was still 1080 tall.
+    backend.apply_dual("DP-1", Mode(2420, 1668, 120), None, placement=BELOW_THE_MONITOR)
+    argv = " ".join(backend.runner.trace[-1])
+
+    assert "output.DP-1.position.-16,1271" not in argv  # pre-shift value, for clarity
+    assert "output.DP-1.position.0,1271" in argv, \
+        f"must follow the monitor's new bottom edge, not the old one: {argv}"
+    assert "output.DP-1.position.1936,0" not in argv, "gave up and snapped right"
+
+
 def test_a_display_left_of_the_monitor_stays_left_when_a_smaller_client_connects(fixture_text):
     """Park it left of the monitor on a tablet, come back on a phone, and the spot
     used to be quietly traded for the right edge.
@@ -149,8 +179,7 @@ def test_a_display_left_of_the_monitor_stays_left_when_a_smaller_client_connects
     backend = _backend(fixture_text)
     # HDMI-A-1 is lit at x=16. The tablet's display (1936 logical wide) sat hard
     # against its left edge: x = 16 - 1936 = -1920, so its right edge is at 16.
-    left_of_it = {"anchor": "HDMI-A-1", "side": "left",
-                  "dx": -1920, "dy": 0, "dx2": 0, "dy2": 1334, "scale": 1.25}
+    left_of_it = {"anchor": "HDMI-A-1", "side": "left", "slide": 0, "scale": 1.25}
 
     # Now a phone connects: 1872 logical wide, 64px narrower than the tablet.
     backend.apply_dual("DP-1", Mode(2340, 1080, 60), None, placement=left_of_it)
@@ -200,7 +229,7 @@ def test_headless_never_teaches_it_a_position(tmp_path):
     snapshot.remember_vdd("DP-1", scale=1.0, offset=BELOW_THE_MONITOR, environ=env)
     snapshot.remember_vdd_scale("DP-1", scale=1.25, environ=env)   # then a headless session
     got = snapshot.remembered_vdd(environ=env)
-    assert got["dy"] == 1080, "the dual placement must survive a headless session"
+    assert got["side"] == "below", "the dual placement must survive a headless session"
     assert got["scale"] == 1.25, "but the zoom the user just set must stick"
 
 

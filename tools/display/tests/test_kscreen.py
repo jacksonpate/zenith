@@ -109,7 +109,7 @@ def test_a_negative_coordinate_is_never_emitted(fixture_text):
     backend = _backend(fixture_text)
     # The VDD remembered as sitting slightly left of a monitor now at x=0.
     backend.apply_dual("DP-1", Mode(2420, 1668, 120), None,
-                       placement={"anchor": "HDMI-A-1", "dx": -16, "dy": 1080,
+                       placement={"anchor": "HDMI-A-1", "side": "below", "slide": -16,
                                   "scale": 1.25})
     joined = " ".join(backend.runner.trace[-1])
     assert "position.-" not in joined, f"emitted a negative coordinate: {joined}"

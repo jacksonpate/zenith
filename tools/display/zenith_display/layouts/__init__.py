@@ -33,6 +33,17 @@ log = logging.getLogger("zenith-display")
 _SIDEWAYS = ("left", "right")
 
 
+def _logical(pixels: int, scale: float) -> int:
+    """A dimension in logical pixels, rounded the way the compositor rounds it.
+
+    KDE *rounds*: a 1080px monitor at scale 0.85 is 1271 logical pixels tall, not
+    1270. Truncating instead leaves the display one pixel short of the monitor it
+    is supposed to be touching, and a one-pixel gap is a gap — KDE refuses the
+    layout exactly as readily as it refuses a thousand-pixel one.
+    """
+    return round(pixels / (scale or 1.0))
+
+
 @dataclass
 class OutputState:
     """Backend-agnostic view of one output."""
@@ -59,13 +70,13 @@ class OutputState:
         its mode width and you leave a dead gap.
         """
         width = self.height if self.rotation in _SIDEWAYS else self.width
-        return int(width / (self.scale or 1.0))
+        return _logical(width, self.scale)
 
     @property
     def logical_height(self) -> int:
         """Height as the desktop sees it: rotated, then scaled."""
         height = self.width if self.rotation in _SIDEWAYS else self.height
-        return int(height / (self.scale or 1.0))
+        return _logical(height, self.scale)
 
     @property
     def rect(self) -> "Rect":
@@ -424,39 +435,47 @@ class LayoutBackend:
         valid and never a surprise.
         """
         scale = float((placement or {}).get("scale") or 0) or None
-        width = int(mode.width / (scale or 1.0))
-        height = int(mode.height / (scale or 1.0))
+        width = _logical(mode.width, scale)
+        height = _logical(mode.height, scale)
         lit = [o.rect for o in targets if o.enabled]
         anchor = self.anchor_of(targets)
 
-        if placement and anchor is not None and placement.get("dx") is not None:
-            # Prefer the monitor the offset was measured against; if it is gone,
-            # any anchor beats refusing to remember anything at all.
+        if placement and anchor is not None and placement.get("side"):
+            # Prefer the monitor the spot was measured against; if it is gone, any
+            # anchor beats refusing to remember anything at all.
             base = next((o for o in targets
                          if o.enabled and o.name == placement.get("anchor")), anchor)
-            x = base.x + int(placement["dx"])
-            y = base.y + int(placement["dy"] or 0)
+            a = base.rect
+            slide = int(placement.get("slide") or 0)
 
-            # Which edge of the display touches the monitor decides which corner of
-            # it we are entitled to remember.  A display sitting *left* of a monitor
-            # is held there by its right edge, and its right edge is a function of
-            # its width — which belongs to the client, and changes the moment a
-            # phone connects instead of a tablet.  Replay the top-left corner and a
-            # narrower client leaves a gap where the display no longer reaches the
-            # monitor; a wider one drives it underneath.  Either way the layout is
-            # refused, and the remembered spot is silently traded for the right edge.
+            # Do not remember the coordinate where the two displays met. Derive it.
             #
-            # So for those two sides, pin the edge that is actually doing the
-            # touching and let the far corner fall where the client's size puts it.
-            side = placement.get("side")
-            if side == "left" and placement.get("dx2") is not None:
-                x = base.x + int(placement["dx2"]) - width
-            elif side == "above" and placement.get("dy2") is not None:
-                y = base.y + int(placement["dy2"]) - height
+            # "Below the monitor" means the display's top edge sits on the monitor's
+            # bottom edge, and *that* number is not a fact about the display at all:
+            # it is the monitor's height, which changes the moment the user rezooms
+            # the monitor. Remember it and the next session puts the display back at
+            # last week's height, overlapping a monitor that has since grown — which
+            # KDE refuses, costing the whole layout and the streaming display with
+            # it. "Left of the monitor" has the same disease in the other direction:
+            # the contact edge is the display's own right edge, so it moves whenever
+            # a different client connects with a different resolution.
+            #
+            # Both go away if the contact axis is never stored. The side is the
+            # user's decision and it is stable; the coordinate is arithmetic, and it
+            # is arithmetic on numbers that are only knowable now.
+            side = placement["side"]
+            if side == "below":
+                x, y = a.x + slide, a.bottom
+            elif side == "above":
+                x, y = a.x + slide, a.y - height
+            elif side == "right":
+                x, y = a.right, a.y + slide
+            else:  # left
+                x, y = a.x - width, a.y + slide
 
             if is_coherent(lit + [Rect(x, y, width, height)]):
                 return x, y, scale
-            log.debug("remembered VDD offset no longer fits the desk — snapping right")
+            log.debug("the remembered spot no longer fits the desk — snapping right")
 
         if anchor is None:  # headless: it is the only display
             return 0, 0, scale
@@ -464,28 +483,24 @@ class LayoutBackend:
 
     @staticmethod
     def offset_from_anchor(vdd: OutputState, targets: List[OutputState]) -> dict:
-        """Record the VDD's spot as an offset from a monitor, for `place_vdd`.
+        """Record the VDD's spot against a monitor, for `place_vdd`.
 
-        Both corners, and which side it was on.  The far corner is the one that
-        matters when the display is held against the monitor by its right or
-        bottom edge, because the near corner then depends on the client's
-        resolution — see `place_vdd`.
+        Which side of the monitor it was on, and how far along that side it had
+        been slid.  Nothing else — see `place_vdd` for why the coordinate where
+        the two displays actually met is deliberately not kept.
         """
         anchor = LayoutBackend.anchor_of([o for o in targets if o.name != vdd.name])
         if anchor is None:
             return {}
         v, a = vdd.rect, anchor.rect
-        if v.right <= a.x:
-            side = "left"
-        elif v.x >= a.right:
-            side = "right"
-        elif v.bottom <= a.y:
-            side = "above"
-        else:
-            side = "below"
-        return {"anchor": anchor.name, "side": side,
-                "dx": v.x - a.x, "dy": v.y - a.y,
-                "dx2": v.right - a.x, "dy2": v.bottom - a.y}
+
+        # Whichever edge it is nearest to. Ties go to the vertical arrangement,
+        # which is the one a user is likeliest to have chosen deliberately.
+        gaps = {"below": abs(v.y - a.bottom), "above": abs(v.bottom - a.y),
+                "right": abs(v.x - a.right), "left": abs(v.right - a.x)}
+        side = min(gaps, key=lambda s: (gaps[s], s not in ("below", "above")))
+        slide = v.x - a.x if side in ("below", "above") else v.y - a.y
+        return {"anchor": anchor.name, "side": side, "slide": slide}
 
 
 def get_backend(env, runner: Runner) -> Optional[LayoutBackend]:
