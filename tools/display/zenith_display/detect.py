@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from . import VDD_MONITOR_NAME
+from . import VDD_MONITOR_NAMES
 from . import edid as edid_mod
 from .runner import Runner, which
 
@@ -136,7 +136,7 @@ def scan_connectors(drm_glob: str = "/sys/class/drm/card*-*") -> List[Connector]
                 status=_read(os.path.join(sysfs, "status")) or "unknown",
                 enabled=_read(os.path.join(sysfs, "enabled")) == "enabled",
                 monitor=monitor,
-                is_vdd=monitor == VDD_MONITOR_NAME,
+                is_vdd=monitor in VDD_MONITOR_NAMES,
                 driver=os.path.basename(os.path.realpath(driver_link)) if os.path.exists(driver_link) else "",
             )
         )

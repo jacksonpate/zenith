@@ -17,6 +17,7 @@ verify generated blocks in tests.
 from __future__ import annotations
 
 import struct
+import zlib
 from typing import Optional, Sequence, Tuple
 
 from . import VDD_MONITOR_NAME
@@ -116,7 +117,8 @@ def _cta_extension(timings: Sequence[Timing], size_mm: Tuple[int, int]) -> bytes
 
 
 def generate_multi(modes: Sequence[Mode], name: str = VDD_MONITOR_NAME,
-                   size_mm: Tuple[int, int] = (600, 340)) -> bytes:
+                   size_mm: Tuple[int, int] = (600, 340),
+                   serial: Optional[int] = None) -> bytes:
     """Multi-mode EDID for a permanently provisioned VDD connector.
 
     The first mode is the preferred timing.  Raises ValueError for modes a
@@ -135,7 +137,7 @@ def generate_multi(modes: Sequence[Mode], name: str = VDD_MONITOR_NAME,
     block[0:8] = _HEADER
     block[8:10] = _manufacturer_id("ZNH")
     block[10:12] = struct.pack("<H", 0x0002)  # product code: provisioned VDD
-    block[12:16] = struct.pack("<I", 0)
+    block[12:16] = struct.pack("<I", serial if serial is not None else _serial_for(name))
     block[16] = 1
     block[17] = 36  # 1990 + 36 = 2026
     block[18] = 1  # EDID 1.4
@@ -193,7 +195,26 @@ def _fitting_timing(mode: Mode) -> Timing:
     raise ValueError(f"no DTD-representable timing for {mode}")
 
 
-def generate(mode: Mode, name: str = VDD_MONITOR_NAME) -> bytes:
+def _serial_for(name: str) -> int:
+    """A stable, non-zero serial number for a display.
+
+    Non-zero because KWin treats a serial-less EDID as unidentifiable and glues
+    the connector name onto the model to tell it apart from its siblings — so the
+    display announces itself as "DP-1-Zenith-VDD" rather than "Zenith-VDD", and
+    changes name depending on which port it happened to borrow.
+
+    Stable because it is the machine's handle on the display: a serial that
+    changed every session would look like a *different* monitor each time, and
+    everything that remembers a display by identity — the compositor's own
+    per-output settings among them — would have nothing to hold on to.
+
+    Distinct per connector, so two virtual displays are never the same display.
+    """
+    return (zlib.crc32(name.encode()) & 0x7FFFFFFF) or 1
+
+
+def generate(mode: Mode, name: str = VDD_MONITOR_NAME,
+             serial: Optional[int] = None) -> bytes:
     """Build a valid 128-byte EDID advertising `mode` as the native timing."""
     timing = _fitting_timing(mode)
 
@@ -201,7 +222,7 @@ def generate(mode: Mode, name: str = VDD_MONITOR_NAME) -> bytes:
     block[0:8] = _HEADER
     block[8:10] = _manufacturer_id("ZNH")
     block[10:12] = struct.pack("<H", 0x0001)  # product code
-    block[12:16] = struct.pack("<I", 0)  # serial
+    block[12:16] = struct.pack("<I", serial if serial is not None else _serial_for(name))
     block[16] = 1  # week
     block[17] = 36  # 1990 + 36 = 2026
     block[18] = 1  # EDID 1.4

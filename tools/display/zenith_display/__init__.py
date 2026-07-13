@@ -18,4 +18,10 @@ Python dependencies: the tool must run on a freshly installed distro.
 
 __version__ = "0.1.0"
 
-VDD_MONITOR_NAME = "ZenithVDD"
+VDD_MONITOR_NAME = "Zenith-VDD"
+
+# Names an earlier Zenith may have written into an EDID that is still forced onto
+# a connector right now. A display we no longer recognise as ours is a display we
+# will never tear down — it becomes a phantom monitor the user cannot get rid of
+# without a reboot — so keep answering to the old name forever. It costs a tuple.
+VDD_MONITOR_NAMES = (VDD_MONITOR_NAME, "ZenithVDD")
