@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ctypes.util
 import glob
+import logging
 import os
 import shlex
 import signal
@@ -31,11 +32,30 @@ from ..runner import Runner, which
 from ..snapshot import state_dir
 from . import VddProvider
 
+log = logging.getLogger("zenith-display")
+
 _PACKAGE_CANDIDATES = {
     "apt-get": ["evdi-dkms"],
     "dnf": ["akmod-evdi", "kmod-evdi", "evdi"],
-    "pacman": ["evdi-dkms"],
+    "pacman": ["evdi"],      # AUR-only in practice; the source build is the real path
     "zypper": ["evdi"],
+}
+
+# Where the module comes from when the distro does not ship one. Arch has it only
+# in the AUR, which pacman cannot reach and which no unattended installer should
+# be driving anyway; plenty of others have nothing at all. Pinned rather than
+# tracking master: evdi follows the kernel's DRM API closely and a bad day to
+# discover a breaking change is the day a user first clones the repo.
+_SOURCE_URL = "https://github.com/DisplayLink/evdi"
+_SOURCE_TAG = "v1.14.10"
+
+# Build-time needs, per package manager. Without headers there is nothing to
+# compile against, and the failure is a wall of make errors rather than a sentence.
+_BUILD_DEPS = {
+    "pacman": ["dkms", "base-devel", "git"],
+    "apt-get": ["dkms", "build-essential", "git", "libdrm-dev"],
+    "dnf": ["dkms", "gcc", "make", "git", "libdrm-devel", "kernel-devel"],
+    "zypper": ["dkms", "gcc", "make", "git", "libdrm-devel"],
 }
 
 _ADD_PATH = "/sys/devices/evdi/add"
@@ -142,9 +162,83 @@ class EvdiProvider(VddProvider):
                     self._layer_on_ostree(env, runner)
                 else:
                     self._install_from_repo(env, runner)
+        # Plenty of distros package no evdi at all — Arch has it only in the AUR,
+        # which pacman cannot reach. "Clone the repo and it works" has to mean
+        # something on those machines too, so build it.
+        if not (_module_loaded() and _libevdi()):
+            self._build_from_source(env, runner)
         if _module_loaded() and not _add_writable():
             runner.run(self._root_wrap(env, ["chmod", "0666", _ADD_PATH]), timeout=5)
-        return _module_loaded()
+        return bool(_module_loaded() and _libevdi())
+
+    def _build_from_source(self, env, runner: Runner) -> None:
+        """Build and install the module (via DKMS) and the userspace library.
+
+        Both, because the provider needs both: DKMS gets the kernel module — and
+        rebuilds it against every future kernel, which a one-off `make` would not
+        — while the library is what Zenith actually dlopens to create a display.
+        Install one without the other and setup reports success onto a machine
+        that still cannot make a virtual display.
+        """
+        pm = next((p for p in _BUILD_DEPS if which(p)), None)
+        if pm is None:
+            log.warning("no known package manager — cannot install evdi's build deps")
+            return
+        if not which("dkms"):
+            install = {"pacman": [pm, "-S", "--noconfirm", "--needed"],
+                       "apt-get": [pm, "install", "-y"],
+                       "dnf": [pm, "install", "-y"],
+                       "zypper": [pm, "-n", "install"]}[pm]
+            runner.run(self._root_wrap(env, [*install, *_BUILD_DEPS[pm]]), timeout=900)
+        if not which("dkms"):
+            log.warning("dkms is unavailable; evdi cannot be built here")
+            return
+
+        version = _SOURCE_TAG.lstrip("v")
+        src = f"/usr/src/evdi-{version}"
+        log.info("building evdi %s from source (no packaged module on this distro)", version)
+
+        if not os.path.isdir(src):
+            clone = ["git", "clone", "--depth", "1", "--branch", _SOURCE_TAG, _SOURCE_URL, src]
+            if not runner.run(self._root_wrap(env, clone), timeout=600).ok:
+                log.warning("could not fetch the evdi source")
+                return
+
+        # DKMS keys off dkms.conf's PACKAGE_VERSION, which need not match the tag.
+        runner.run(self._root_wrap(env, ["dkms", "add", "-m", "evdi", "-v", version]), timeout=60)
+        built = runner.run(self._root_wrap(env, ["dkms", "install", "-m", "evdi",
+                                                 "-v", version, "--force"]), timeout=1800)
+        if not built.ok:
+            log.warning("evdi failed to build against this kernel — are the kernel "
+                        "headers for %s installed?", os.uname().release)
+            return
+        runner.run(self._root_wrap(env, ["modprobe", "evdi"]), timeout=30)
+
+        if not _libevdi():
+            self._install_library(env, runner, src)
+
+    def _install_library(self, env, runner: Runner, src: str) -> None:
+        """Build libevdi and put it where the dynamic linker will actually find it.
+
+        `make` leaves a versioned `libevdi.so.N.M.K` sitting in the source tree,
+        which `find_library` will never see. It needs the soname symlink and a
+        cached ldconfig entry, or Zenith reports evdi ready and then fails to load
+        it at the moment a user starts a stream.
+        """
+        if not runner.run(self._root_wrap(env, ["make", "-C", f"{src}/library"]), timeout=600).ok:
+            log.warning("libevdi failed to build")
+            return
+        libdir = "/usr/lib64" if os.path.isdir("/usr/lib64") else "/usr/lib"
+        built = sorted(glob.glob(f"{src}/library/libevdi.so*"))
+        real = next((p for p in built if not os.path.islink(p)), None)
+        if real is None:
+            log.warning("libevdi built but produced no shared object")
+            return
+        runner.run(self._root_wrap(env, ["install", "-m", "0755", real,
+                                         f"{libdir}/libevdi.so.1"]), timeout=30)
+        runner.run(self._root_wrap(env, ["ln", "-sf", f"{libdir}/libevdi.so.1",
+                                         f"{libdir}/libevdi.so"]), timeout=10)
+        runner.run(self._root_wrap(env, ["ldconfig"]), timeout=60)
 
     def _layer_on_ostree(self, env, runner: Runner) -> None:
         """Layer the module into the next deployment.
