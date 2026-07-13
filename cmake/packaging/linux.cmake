@@ -16,6 +16,15 @@ install(DIRECTORY "${CMAKE_SOURCE_DIR}/tools/display/zenith_display"
         DESTINATION "${CMAKE_INSTALL_LIBDIR}/zenith"
         PATTERN "__pycache__" EXCLUDE)
 
+# The privileged helper `zenith-display setup` installs and puts behind a scoped
+# sudoers rule. Without it in the package, the drm-debugfs provider finds no
+# helper to install, quietly reports itself unavailable, and every packaged
+# machine falls through to evdi — a kernel module, DKMS, and a Secure Boot
+# enrolment — on hardware that needed none of it. It worked only when setup was
+# run from a source tree, which is not how anybody installs this.
+install(PROGRAMS "${CMAKE_SOURCE_DIR}/tools/display/helpers/zenith-drm-vdd"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/zenith/helpers")
+
 # copy assets (excluding shaders) to build directory, for running without install
 file(COPY "${SUNSHINE_SOURCE_ASSETS_DIR}/linux/assets/"
         DESTINATION "${CMAKE_BINARY_DIR}/assets"
