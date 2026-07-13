@@ -165,9 +165,15 @@ def _apply(kind: str, args) -> int:
         snapshot.save(backend.name, baseline, provider=provider.name, vdd_output=vdd)
     try:
         if kind == "headless":
-            backend.apply_headless(vdd, mode)
+            # Only the VDD is lit, so where it sits means nothing — but the zoom
+            # the user chose for it means everything, and left alone the compositor
+            # guesses one from a physical size the display does not have.
+            backend.apply_headless(vdd, mode, snapshot.remembered_vdd())
         else:
-            backend.apply_dual(vdd, mode, baseline)
+            # Where they last left the streaming display, measured against a
+            # monitor. The monitors themselves are not replayed — they are either
+            # lit in front of the user already, or they come back from `baseline`.
+            backend.apply_dual(vdd, mode, baseline, snapshot.remembered_vdd())
     except Exception as exc:  # roll back: never leave the user stranded
         log.error("apply failed (%s); rolling back", exc)
         restored = False
@@ -239,11 +245,7 @@ def _restore_from(doc: dict, env, runner: Runner) -> None:
                   doc.get("backend"))
         return
     provider = providers.get_provider(doc.get("provider", ""))
-    if provider is not None:
-        provider.destroy(env, runner, {"vdd_output": doc.get("vdd_output")})
-        if doc.get("vdd_output") and not runner.dry_run:
-            snapshot.untrack_vdd(doc["vdd_output"])
-    elif doc.get("provider"):
+    if provider is None and doc.get("provider"):
         log.warning("unknown provider %r in snapshot — its VDD may need manual teardown",
                     doc.get("provider"))
 
@@ -256,9 +258,38 @@ def _restore_from(doc: dict, env, runner: Runner) -> None:
     # Drop anything the display stack no longer has, too: a layout can outlive
     # the monitor it names (undock, swap a cable), and one stale entry is enough
     # to fail the whole replay and leave the desk dark.
-    live = {o.name for o in backend.outputs()}
+    live_outputs = backend.outputs()
+    live = {o.name for o in live_outputs}
     outputs = [o for o in doc.get("payload", {}).get("outputs", []) if o.get("name") in live]
     vdd = doc.get("vdd_output")
+
+    # Learn where the user left the streaming display, while it still exists.
+    # This is the only moment it can be read: a beat later it is destroyed, and
+    # with it every trace of the arrangement they chose. Drag it to the left of
+    # the desk and set a zoom that reads from the sofa — that is a decision about
+    # *the* streaming display, not about a display that happened to exist today.
+    if vdd and not runner.dry_run:
+        others_lit = any(o.enabled and o.name != vdd for o in live_outputs)
+        for out in live_outputs:
+            if out.name != vdd or not out.enabled:
+                continue
+            if others_lit:
+                # A dual session: the user put it somewhere, beside screens they
+                # can see. That is a real choice — position and zoom both. Record
+                # the position against one of those screens rather than as a bare
+                # coordinate, so that it still means the same thing tomorrow.
+                snapshot.remember_vdd(
+                    vdd, out.scale,
+                    backend.offset_from_anchor(out, [o for o in live_outputs if o.enabled]),
+                )
+            else:
+                # A headless session: it is the only display, so it sits at 0,0
+                # because that is where a lone screen goes, not because anyone
+                # chose it. Learn the zoom, keep the position they last chose —
+                # otherwise the next dual drops it on top of a monitor and the
+                # desktop mirrors instead of extending.
+                snapshot.remember_vdd_scale(vdd, out.scale)
+            break
 
     # Filtering can eat the only monitor the layout lit — undock the laptop and
     # the remembered desk becomes "eDP-1: off, HDMI-A-1: <gone>", which replays
@@ -276,13 +307,43 @@ def _restore_from(doc: dict, env, runner: Runner) -> None:
             snapshot.clear()
         return
 
+    # If the user's own monitors are lit right now, the desk in front of them IS
+    # the desk. They may have moved a screen or changed its zoom mid-session, and
+    # replaying a snapshot taken before any of that silently undoes a deliberate
+    # change — and leaves a gap in the layout where the rescaled screen no longer
+    # reaches its neighbour. There is nothing to put back: take the virtual
+    # display away and leave everything else exactly where it stands.
+    lit_now = [o for o in live_outputs if o.enabled and o.name != vdd]
+    if lit_now:
+        outputs = []  # touch nothing but the VDD
+        if not runner.dry_run:
+            # ...and learn it, so a later headless session (where the monitors are
+            # dark and cannot speak for themselves) puts back the desk they chose.
+            snapshot.remember(backend.name, backend.snapshot_of(lit_now))
+
     if vdd:
         outputs.append({"name": vdd, "enabled": False})
     try:
+        # Put the layout back FIRST, while the compositor still has every output
+        # it thinks it has. This is the whole ballgame: tearing the connector down
+        # first hot-removes an output the compositor is actively driving, and KWin
+        # does not survive that — every screen goes black, including the physical
+        # ones that were never touched, and it keeps reporting them as "enabled"
+        # while the user stares at nothing.
+        #
+        # Disable the VDD through the compositor, let it settle on a layout it can
+        # actually drive, and only then take the connector away — by which point
+        # it is an output nobody is using and removing it is a non-event.
         backend.restore({"outputs": outputs})
     except Exception as exc:
         log.error("restore failed (%s) — snapshot kept for retry", exc)
         return
+
+    if provider is not None:
+        provider.destroy(env, runner, {"vdd_output": vdd})
+        if vdd and not runner.dry_run:
+            snapshot.untrack_vdd(vdd)
+
     if not runner.dry_run:
         snapshot.clear()
 

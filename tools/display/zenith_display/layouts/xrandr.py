@@ -167,15 +167,19 @@ class XrandrBackend(LayoutBackend):
         self.runner.run(["xrandr", "--addmode", vdd, name], timeout=10, check=True)
         return name
 
-    def apply_headless(self, vdd: str, mode: Mode) -> None:
+    def apply_headless(self, vdd: str, mode: Mode,
+                       placement: Optional[dict] = None) -> None:
         mode_name = self.ensure_mode(vdd, mode)
         args = ["xrandr", "--output", vdd, "--mode", mode_name, "--pos", "0x0", "--primary"]
+        # X has no per-output scale; --scale zooms the framebuffer, which is not
+        # the same thing and would blur the stream. Zoom is a Wayland luxury here.
         for out in self.outputs():
             if out.name != vdd and out.enabled:
                 args += ["--output", out.name, "--off"]
         self.runner.run(args, timeout=15, check=True)
 
-    def apply_dual(self, vdd: str, mode: Mode, baseline: Optional[dict] = None) -> None:
+    def apply_dual(self, vdd: str, mode: Mode, baseline: Optional[dict] = None,
+                   placement: Optional[dict] = None) -> None:
         """Restate the user's monitors, then add the VDD off the right edge.
 
         Coming out of headless they are all ``--off`` (and the VDD holds
@@ -199,8 +203,8 @@ class XrandrBackend(LayoutBackend):
                 args += ["--rotate", out.rotation]
             if out.primary:
                 args += ["--primary"]
-        args += ["--output", vdd, "--mode", mode_name,
-                 "--pos", f"{self.rightmost_edge(targets)}x0"]
+        x, y, _scale = self.place_vdd(mode, targets, placement)
+        args += ["--output", vdd, "--mode", mode_name, "--pos", f"{x}x{y}"]
         self.runner.run(args, timeout=15, check=True)
 
     def relight(self, vdds: Iterable[str] = ()) -> None:

@@ -20,6 +20,7 @@ adds the VDD would leave it that way — still headless.
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field, replace
 from typing import Iterable, List, Optional
@@ -27,7 +28,20 @@ from typing import Iterable, List, Optional
 from ..modes import Mode
 from ..runner import Runner
 
+log = logging.getLogger("zenith-display")
+
 _SIDEWAYS = ("left", "right")
+
+
+def _logical(pixels: int, scale: float) -> int:
+    """A dimension in logical pixels, rounded the way the compositor rounds it.
+
+    KDE *rounds*: a 1080px monitor at scale 0.85 is 1271 logical pixels tall, not
+    1270. Truncating instead leaves the display one pixel short of the monitor it
+    is supposed to be touching, and a one-pixel gap is a gap — KDE refuses the
+    layout exactly as readily as it refuses a thousand-pixel one.
+    """
+    return round(pixels / (scale or 1.0))
 
 
 @dataclass
@@ -56,7 +70,17 @@ class OutputState:
         its mode width and you leave a dead gap.
         """
         width = self.height if self.rotation in _SIDEWAYS else self.width
-        return int(width / (self.scale or 1.0))
+        return _logical(width, self.scale)
+
+    @property
+    def logical_height(self) -> int:
+        """Height as the desktop sees it: rotated, then scaled."""
+        height = self.width if self.rotation in _SIDEWAYS else self.height
+        return _logical(height, self.scale)
+
+    @property
+    def rect(self) -> "Rect":
+        return Rect(self.x, self.y, self.logical_width, self.logical_height)
 
     def best_mode(self) -> Optional[Mode]:
         """The output's own preferred mode, for when nothing else knows one.
@@ -75,6 +99,73 @@ class OutputState:
         return None
 
 
+@dataclass(frozen=True)
+class Rect:
+    """One display's footprint on the desktop, in logical pixels."""
+
+    x: int
+    y: int
+    w: int
+    h: int
+
+    @property
+    def right(self) -> int:
+        return self.x + self.w
+
+    @property
+    def bottom(self) -> int:
+        return self.y + self.h
+
+    def overlaps(self, other: "Rect") -> bool:
+        return (self.x < other.right and other.x < self.right
+                and self.y < other.bottom and other.y < self.bottom)
+
+    def touches(self, other: "Rect") -> bool:
+        """Do these two share a border of non-zero length?
+
+        Corner-to-corner does not count: two screens meeting at a single point
+        leave the desktop pinched, and the compositor treats that as a gap.
+        """
+        edge_x = self.right == other.x or other.right == self.x
+        edge_y = self.bottom == other.y or other.bottom == self.y
+        overlap_y = min(self.bottom, other.bottom) - max(self.y, other.y)
+        overlap_x = min(self.right, other.right) - max(self.x, other.x)
+        return (edge_x and overlap_y > 0) or (edge_y and overlap_x > 0)
+
+
+def is_coherent(rects: List[Rect]) -> bool:
+    """Would a compositor accept this arrangement?
+
+    KDE — and it is not alone — rejects a layout outright if any two screens
+    overlap, or if the screens do not form one connected surface. It does not
+    partially apply such a layout; it reverts the whole thing. That matters far
+    more than it sounds, because Zenith enables the virtual display in the *same*
+    atomic call that positions the monitors: one bad coordinate anywhere and the
+    stream has no display at all. The user sees a plain desktop and no error.
+
+    So anything assembled from memory gets checked here before it is applied, and
+    anything that fails the check is not applied — it is replaced by a layout that
+    is merely correct rather than remembered.
+    """
+    if len(rects) < 2:
+        return True
+    for i, a in enumerate(rects):
+        for b in rects[i + 1:]:
+            if a.overlaps(b):
+                return False
+
+    # One connected surface: walk the touch graph and see if it reaches everyone.
+    seen = {0}
+    frontier = [0]
+    while frontier:
+        i = frontier.pop()
+        for j, other in enumerate(rects):
+            if j not in seen and rects[i].touches(other):
+                seen.add(j)
+                frontier.append(j)
+    return len(seen) == len(rects)
+
+
 class LayoutBackend:
     name = "abstract"
 
@@ -87,10 +178,12 @@ class LayoutBackend:
     def snapshot(self) -> dict:
         raise NotImplementedError
 
-    def apply_headless(self, vdd: str, mode: Mode) -> None:
+    def apply_headless(self, vdd: str, mode: Mode,
+                       placement: Optional[dict] = None) -> None:
         raise NotImplementedError
 
-    def apply_dual(self, vdd: str, mode: Mode, baseline: Optional[dict] = None) -> None:
+    def apply_dual(self, vdd: str, mode: Mode, baseline: Optional[dict] = None,
+                   placement: Optional[dict] = None) -> None:
         raise NotImplementedError
 
     def restore(self, payload: dict) -> None:
@@ -150,6 +243,17 @@ class LayoutBackend:
             if self.runner.dry_run or time.monotonic() >= deadline:
                 return self.runner.dry_run
             time.sleep(0.25)
+
+    def snapshot_of(self, outputs: List[OutputState]) -> dict:
+        """A snapshot payload for a subset of outputs, in this backend's shape.
+
+        `snapshot()` reads the display fresh; this serialises outputs already in
+        hand — the ones the user was looking at a moment ago, before the virtual
+        display was taken away.
+        """
+        names = {o.name for o in outputs}
+        return {"outputs": [o for o in self.snapshot().get("outputs", [])
+                            if o.get("name") in names]}
 
     @staticmethod
     def baseline_outputs(baseline: Optional[dict]) -> List[OutputState]:
@@ -289,6 +393,114 @@ class LayoutBackend:
             if out.enabled:
                 edge = max(edge, out.x + out.logical_width)
         return edge
+
+    @staticmethod
+    def anchor_of(targets: List[OutputState]) -> Optional[OutputState]:
+        """The monitor the virtual display's position is remembered against.
+
+        The primary, or failing that the leftmost lit screen — anything, so long
+        as it is chosen the same way every time.
+        """
+        lit = [o for o in targets if o.enabled]
+        if not lit:
+            return None
+        for out in lit:
+            if out.primary or out.priority == 1:
+                return out
+        return min(lit, key=lambda o: (o.x, o.y, o.name))
+
+    def place_vdd(self, mode: Mode, targets: List[OutputState],
+                  placement: Optional[dict] = None) -> tuple:
+        """Where to put the virtual display, and how far to zoom it.
+
+        The user's monitors are not ours to move.  At dual time they are either
+        already lit in front of the user — in which case that *is* the desk, zoom
+        changes and all — or they are coming back from a snapshot that is
+        internally consistent because it was captured all at once.  Either way the
+        only thing left to decide is where the streaming display goes.
+
+        Its position is remembered as an offset from a monitor rather than an
+        absolute coordinate, and that is the whole trick.  Compositors renormalise
+        a layout after every apply (KDE slides the top-left corner back to 0,0), so
+        an absolute coordinate does not survive the session that recorded it.  An
+        offset from a screen the user can see does: "below the monitor" stays below
+        the monitor whether or not the desk moved, and whether or not they changed
+        its zoom.
+
+        Even so, the offset is a memory, and the desk it was measured against may
+        have changed shape underneath it — rescale a monitor and a display tucked
+        under it no longer reaches its edge.  So the result is checked, and a
+        placement that would leave the desktop overlapping or gapped is dropped in
+        favour of one that works: hard against the right edge, which is always
+        valid and never a surprise.
+        """
+        scale = float((placement or {}).get("scale") or 0) or None
+        width = _logical(mode.width, scale)
+        height = _logical(mode.height, scale)
+        lit = [o.rect for o in targets if o.enabled]
+        anchor = self.anchor_of(targets)
+
+        if placement and anchor is not None and placement.get("side"):
+            # Prefer the monitor the spot was measured against; if it is gone, any
+            # anchor beats refusing to remember anything at all.
+            base = next((o for o in targets
+                         if o.enabled and o.name == placement.get("anchor")), anchor)
+            a = base.rect
+            slide = int(placement.get("slide") or 0)
+
+            # Do not remember the coordinate where the two displays met. Derive it.
+            #
+            # "Below the monitor" means the display's top edge sits on the monitor's
+            # bottom edge, and *that* number is not a fact about the display at all:
+            # it is the monitor's height, which changes the moment the user rezooms
+            # the monitor. Remember it and the next session puts the display back at
+            # last week's height, overlapping a monitor that has since grown — which
+            # KDE refuses, costing the whole layout and the streaming display with
+            # it. "Left of the monitor" has the same disease in the other direction:
+            # the contact edge is the display's own right edge, so it moves whenever
+            # a different client connects with a different resolution.
+            #
+            # Both go away if the contact axis is never stored. The side is the
+            # user's decision and it is stable; the coordinate is arithmetic, and it
+            # is arithmetic on numbers that are only knowable now.
+            side = placement["side"]
+            if side == "below":
+                x, y = a.x + slide, a.bottom
+            elif side == "above":
+                x, y = a.x + slide, a.y - height
+            elif side == "right":
+                x, y = a.right, a.y + slide
+            else:  # left
+                x, y = a.x - width, a.y + slide
+
+            if is_coherent(lit + [Rect(x, y, width, height)]):
+                return x, y, scale
+            log.debug("the remembered spot no longer fits the desk — snapping right")
+
+        if anchor is None:  # headless: it is the only display
+            return 0, 0, scale
+        return self.rightmost_edge(targets), anchor.y, scale
+
+    @staticmethod
+    def offset_from_anchor(vdd: OutputState, targets: List[OutputState]) -> dict:
+        """Record the VDD's spot against a monitor, for `place_vdd`.
+
+        Which side of the monitor it was on, and how far along that side it had
+        been slid.  Nothing else — see `place_vdd` for why the coordinate where
+        the two displays actually met is deliberately not kept.
+        """
+        anchor = LayoutBackend.anchor_of([o for o in targets if o.name != vdd.name])
+        if anchor is None:
+            return {}
+        v, a = vdd.rect, anchor.rect
+
+        # Whichever edge it is nearest to. Ties go to the vertical arrangement,
+        # which is the one a user is likeliest to have chosen deliberately.
+        gaps = {"below": abs(v.y - a.bottom), "above": abs(v.bottom - a.y),
+                "right": abs(v.x - a.right), "left": abs(v.right - a.x)}
+        side = min(gaps, key=lambda s: (gaps[s], s not in ("below", "above")))
+        slide = v.x - a.x if side in ("below", "above") else v.y - a.y
+        return {"anchor": anchor.name, "side": side, "slide": slide}
 
 
 def get_backend(env, runner: Runner) -> Optional[LayoutBackend]:

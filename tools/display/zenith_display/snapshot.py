@@ -181,3 +181,69 @@ def is_user_layout(payload: dict, vdds: Union[str, Iterable[str], None] = None) 
         if out.get("enabled") and out.get("name") not in virtual:
             return True
     return False
+
+def _vdd_placement_path(environ=os.environ) -> str:
+    return os.path.join(state_dir(environ), "vdd-placement.json")
+
+
+def remember_vdd(name: str, scale: float, offset: Optional[dict] = None,
+                 environ=os.environ) -> None:
+    """Where the streaming display sat, and how big things were on it.
+
+    The virtual display is destroyed at the end of every session, so nothing
+    about it survives on its own: drag it below the desk, set a zoom that is
+    readable from the sofa, and next session it is back off the right edge at
+    whatever scale the compositor guessed from a physical size it does not have.
+    It is not a new display each time — it is *the* streaming display, and it
+    belongs where it was left.
+
+    `offset` places it against a monitor (``anchor``/``dx``/``dy``) rather than
+    at an absolute coordinate, because absolute coordinates do not survive:
+    compositors renormalise a layout after every apply — KDE slides the top-left
+    corner of the desktop back to 0,0 — so the numbers a session records are not
+    the numbers the next session would need. An offset from a screen the user can
+    actually see is stable under that, and under a zoom change too.
+
+    Kept apart from the desktop snapshot on purpose. That records the user's real
+    monitors and is cleared when a session ends; this outlives every session,
+    because the whole point is to survive one.
+    """
+    doc = {"version": 2, "saved": time.time(), "name": name, "scale": float(scale)}
+    doc.update(offset or {})
+    tmp = _vdd_placement_path(environ) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=2)
+    os.replace(tmp, _vdd_placement_path(environ))
+
+
+def remembered_vdd(environ=os.environ) -> Optional[dict]:
+    """The placement the user last left the streaming display in, or None."""
+    try:
+        with open(_vdd_placement_path(environ), encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(doc, dict) or "scale" not in doc:
+        return None
+    return doc
+
+
+def remember_vdd_scale(name: str, scale: float, environ=os.environ) -> None:
+    """Update only the zoom, leaving the remembered position untouched.
+
+    A headless session has one display, and a lone display sits at 0,0 — that is
+    where the compositor puts it, not a choice anybody made, and there is no
+    monitor beside it to measure an offset against. Recording it as the user's
+    position means the next dual session drops the virtual display straight on top
+    of a monitor, and the desktop mirrors instead of extending.
+
+    The zoom is different: the user sets it, and it is theirs wherever they set it.
+    """
+    doc = remembered_vdd(environ) or {"version": 2, "name": name}
+    doc["name"] = name
+    doc["scale"] = float(scale)
+    doc["saved"] = time.time()
+    tmp = _vdd_placement_path(environ) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=2)
+    os.replace(tmp, _vdd_placement_path(environ))

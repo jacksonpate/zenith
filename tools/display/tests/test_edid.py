@@ -70,7 +70,7 @@ def test_multi_mode_edid_structure():
     assert blob[128] == 0x02 and blob[129] == 0x03  # CTA-861 rev 3
     for i in range(len(blob) // 128):  # every block checksums to zero
         assert sum(blob[128 * i:128 * (i + 1)]) % 256 == 0
-    assert edid.monitor_name(blob) == "ZenithVDD"
+    assert edid.monitor_name(blob) == VDD_MONITOR_NAME
     parsed = edid.parse_dtd_mode(blob)
     assert (parsed.width, parsed.height, parsed.refresh) == (1920, 1080, 60)
 
@@ -83,3 +83,33 @@ def test_multi_mode_rejects_undtdable_mode():
 def test_dtd_uses_cvt_rb_sync_polarity():
     blob = edid.generate(Mode(1920, 1080, 60))
     assert blob[54 + 17] == 0x1A  # digital separate sync, +hsync -vsync
+
+
+def test_the_edid_carries_a_serial_number():
+    """Without one, KWin cannot tell this display from any other and falls back to
+    identifying it by the port it is plugged into — so it announces itself as
+    "DP-1-Zenith-VDD", and renames itself whenever it borrows a different port.
+
+        make: 'ZNH'   model: 'DP-1-Zenith-VDD'      <- no serial
+        make: 'ZNH'   model: 'Zenith-VDD'           <- serial
+
+    Stable, because a serial that changed every session would look like a
+    different monitor each time, and anything remembering the display by identity
+    would have nothing to hold on to.
+    """
+    import struct
+
+    first = edid.generate(Mode(1920, 1080, 60))
+    again = edid.generate(Mode(2420, 1668, 120))   # different mode, same display
+    serial = struct.unpack("<I", first[12:16])[0]
+
+    assert serial != 0, "a zero serial is what KWin treats as no serial at all"
+    assert struct.unpack("<I", again[12:16])[0] == serial, "the display must keep its identity"
+
+
+def test_two_displays_are_not_the_same_display():
+    import struct
+
+    a = edid.generate(Mode(1920, 1080, 60), name="Zenith-VDD")
+    b = edid.generate(Mode(1920, 1080, 60), name="Zenith-VDD-2")
+    assert struct.unpack("<I", a[12:16]) != struct.unpack("<I", b[12:16])

@@ -127,15 +127,18 @@ class WlrBackend(LayoutBackend):
         else:
             self.runner.run(["wlr-randr", "--output", name, "--off"], timeout=15, check=True)
 
-    def apply_headless(self, vdd: str, mode: Mode) -> None:
-        self._enable(vdd, mode, 0)
+    def apply_headless(self, vdd: str, mode: Mode,
+                       placement: Optional[dict] = None) -> None:
+        # Position is meaningless when it is the only display; the zoom is not.
+        self._enable(vdd, mode, 0, 0, (placement or {}).get("scale"))
         for out in self.outputs():
             if out.name != vdd and out.enabled:
                 self._disable(out.name)
 
-    def apply_dual(self, vdd: str, mode: Mode, baseline: Optional[dict] = None) -> None:
-        """Relight the user's monitors, then add the VDD off the right edge —
-        entering dual from a headless session, they are all off."""
+    def apply_dual(self, vdd: str, mode: Mode, baseline: Optional[dict] = None,
+                   placement: Optional[dict] = None) -> None:
+        """Relight the user's monitors, then put the VDD where they left it —
+        entering dual from a headless session, the monitors are all off."""
         targets = self.dual_targets(vdd, baseline)
         for out in targets:
             if out.enabled:
@@ -143,7 +146,8 @@ class WlrBackend(LayoutBackend):
                              out.x, out.y, out.scale)
             else:
                 self._disable(out.name)
-        self._enable(vdd, mode, self.rightmost_edge(targets))
+        x, y, scale = self.place_vdd(mode, targets, placement)
+        self._enable(vdd, mode, x, y, scale)
 
     def relight(self, vdds: Iterable[str] = ()) -> None:
         outs = self.outputs()

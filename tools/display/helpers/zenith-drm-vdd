@@ -1,0 +1,45 @@
+#!/bin/bash
+# Zenith VDD helper — the only thing on the spare-connector path that needs root.
+#
+# Borrows a disconnected DRM connector for the length of a session: forces an
+# EDID carrying exactly the client's mode onto it, and forces it "connected".
+# `off` puts it back to `detect`, and the display is gone — not disabled, gone.
+#
+# It runs under a NOPASSWD sudoers rule, so it must not be a general
+# "write anything anywhere" tool. The connector name is validated against a
+# strict pattern, and the only paths it will ever touch are that connector's own
+# two kernel files. Anything shaped like `sudo sh -c 'cat > /sys/...'` would
+# hand every user on the box a root file-write primitive.
+#
+#   zenith-drm-vdd on  <connector> <edid-file>
+#   zenith-drm-vdd off <connector>
+set -euo pipefail
+
+action=${1:-}
+conn=${2:-}
+
+# A connector name and nothing else: no slashes, no dots, no traversal.
+[[ "$conn" =~ ^[A-Za-z0-9-]+$ ]] || { echo "bad connector name" >&2; exit 2; }
+
+sysfs=$(echo /sys/class/drm/card*-"$conn")
+[ -d "$sysfs" ] || { echo "no such connector: $conn" >&2; exit 2; }
+
+dbg=""
+for d in /sys/kernel/debug/dri/*/"$conn"; do [ -d "$d" ] && dbg="$d" && break; done
+
+case "$action" in
+  on)
+    edid=${3:-}
+    [ -f "$edid" ] || { echo "no edid file: ${edid:-<none>}" >&2; exit 2; }
+    [ -n "$dbg" ] && cat "$edid" > "$dbg/edid_override"
+    printf 'on' > "$sysfs/status"
+    ;;
+  off)
+    [ -n "$dbg" ] && printf 'reset' > "$dbg/edid_override"
+    printf 'detect' > "$sysfs/status"
+    ;;
+  *)
+    echo "usage: zenith-drm-vdd on <connector> <edid> | off <connector>" >&2
+    exit 2
+    ;;
+esac

@@ -90,12 +90,16 @@ class GnomeBackend(LayoutBackend):
     def _logical(self, x: int, y: int, scale: float, primary: bool, connector: str, mode_id: str):
         return (x, y, scale, 0, primary, [(connector, mode_id, {})])
 
-    def apply_headless(self, vdd: str, mode: Mode) -> None:  # pragma: no cover
+    def apply_headless(self, vdd: str, mode: Mode,
+                       placement: Optional[dict] = None) -> None:  # pragma: no cover
         monitors = self._state().unpack()[1]
-        mode_id = self._mode_id(monitors, vdd, mode)
+        want = float((placement or {}).get("scale") or 1.0)
+        # Mutter validates scale per-resolution and rejects the whole config if
+        # the two disagree, so the mode and the scale are resolved together.
+        mode_id, scale = self._resolve(monitors, vdd, mode, want)
         if not mode_id:
             raise RuntimeError(f"no usable mode on {vdd}")
-        self._apply([self._logical(0, 0, 1.0, True, vdd, mode_id)])
+        self._apply([self._logical(0, 0, scale, True, vdd, mode_id)])
 
     def _resolve(self, monitors, connector: str, mode: Optional[Mode],
                  scale: float = 1.0):  # pragma: no cover
@@ -125,8 +129,8 @@ class GnomeBackend(LayoutBackend):
             return chosen[0], min(supported, key=lambda s: abs(s - (scale or 1.0)))
         return None, scale
 
-    def apply_dual(self, vdd: str, mode: Mode,
-                   baseline: Optional[dict] = None) -> None:  # pragma: no cover
+    def apply_dual(self, vdd: str, mode: Mode, baseline: Optional[dict] = None,
+                   placement: Optional[dict] = None) -> None:  # pragma: no cover
         """An output left out of ApplyMonitorsConfig is an output that is *off*,
         so a dual entered from headless must name the user's monitors again —
         reading them from the current state would only find the VDD.
@@ -144,17 +148,20 @@ class GnomeBackend(LayoutBackend):
 
         targets = self._anchored(self.dual_targets(vdd, baseline))
         try:
-            self._apply(self._layout(monitors, targets, vdd, vdd_mode_id))
+            self._apply(self._layout(monitors, targets, vdd, vdd_mode_id, mode, placement))
         except Exception as exc:
             # Mutter rejects a config whole: a gap between logical monitors (we
             # dropped one it no longer has), an unusable scale, an arrangement it
             # dislikes. Rather than strand the user in headless, lay the same
-            # monitors out plainly, left to right, and try once more.
+            # monitors out plainly, left to right, and drop the remembered spot
+            # for the virtual display — try once more with nothing to argue about.
             log.warning("mutter rejected the dual layout (%s); retrying packed", exc)
             self._apply(self._layout(monitors, self._packed(targets, repack=True),
-                                     vdd, vdd_mode_id))
+                                     vdd, vdd_mode_id, mode, None))
 
-    def _layout(self, monitors, targets, vdd: str, vdd_mode_id: str):  # pragma: no cover
+    def _layout(self, monitors, targets, vdd: str, vdd_mode_id: str,
+                mode: Optional[Mode] = None,
+                placement: Optional[dict] = None):  # pragma: no cover
         layout = []
         for out in targets:
             if not out.enabled:
@@ -164,8 +171,13 @@ class GnomeBackend(LayoutBackend):
             if not mode_id:
                 continue  # mutter no longer has it; naming it would sink the config
             layout.append(self._logical(out.x, out.y, scale, out.primary, out.name, mode_id))
-        layout.append(self._logical(self.rightmost_edge(targets), 0, 1.0, False,
-                                    vdd, vdd_mode_id))
+
+        if mode is None:
+            x, y, vdd_scale = self.rightmost_edge(targets), 0, 1.0
+        else:
+            x, y, want_scale = self.place_vdd(mode, targets, placement)
+            _id, vdd_scale = self._resolve(monitors, vdd, mode, want_scale or 1.0)
+        layout.append(self._logical(x, y, vdd_scale or 1.0, False, vdd, vdd_mode_id))
         return layout
 
     @staticmethod
