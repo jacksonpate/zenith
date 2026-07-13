@@ -47,7 +47,7 @@ _PACKAGE_CANDIDATES = {
 # tracking master: evdi follows the kernel's DRM API closely and a bad day to
 # discover a breaking change is the day a user first clones the repo.
 _SOURCE_URL = "https://github.com/DisplayLink/evdi"
-_SOURCE_TAG = "v1.14.10"
+_SOURCE_TAG = "v1.15.0"
 
 # Build-time needs, per package manager. Without headers there is nothing to
 # compile against, and the failure is a wall of make errors rather than a sentence.
