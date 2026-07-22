@@ -8,7 +8,7 @@
 # It runs under a NOPASSWD sudoers rule, so it must not be a general
 # "write anything anywhere" tool. The connector name is validated against a
 # strict pattern, and the only paths it will ever touch are that connector's own
-# two kernel files. Anything shaped like `sudo sh -c 'cat > /sys/...'` would
+# three kernel files. Anything shaped like `sudo sh -c 'cat > /sys/...'` would
 # hand every user on the box a root file-write primitive.
 #
 #   zenith-drm-vdd on  <connector> <edid-file>
@@ -27,16 +27,29 @@ sysfs=$(echo /sys/class/drm/card*-"$conn")
 dbg=""
 for d in /sys/kernel/debug/dri/*/"$conn"; do [ -d "$d" ] && dbg="$d" && break; done
 
+# Writing `status` changes what the kernel thinks, but amdgpu does not re-probe
+# off the back of it, so the connector never reaches the compositor: `on` leaves
+# a display KWin cannot see (the stream mirrors the desktop instead) and `off`
+# leaves one it will not let go of. Poking trigger_hotplug is what actually
+# publishes the change. Only amdgpu exposes it — elsewhere the status write is
+# enough — so a missing file is normal, never an error.
+notify() {
+  [ -n "$dbg" ] && [ -w "$dbg/trigger_hotplug" ] && printf 1 > "$dbg/trigger_hotplug"
+  return 0
+}
+
 case "$action" in
   on)
     edid=${3:-}
     [ -f "$edid" ] || { echo "no edid file: ${edid:-<none>}" >&2; exit 2; }
     [ -n "$dbg" ] && cat "$edid" > "$dbg/edid_override"
     printf 'on' > "$sysfs/status"
+    notify
     ;;
   off)
     [ -n "$dbg" ] && printf 'reset' > "$dbg/edid_override"
     printf 'detect' > "$sysfs/status"
+    notify
     ;;
   *)
     echo "usage: zenith-drm-vdd on <connector> <edid> | off <connector>" >&2
