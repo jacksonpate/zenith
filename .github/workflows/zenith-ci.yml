@@ -68,6 +68,18 @@ jobs:
             sudo_flag: "--sudo-off"
             package: Zenith.rpm
             artifact: zenith-fedora-42-aarch64.rpm
+          - name: Fedora 44 (rpm, x86_64)
+            runner: ubuntu-latest
+            container: fedora:44
+            sudo_flag: "--sudo-off"
+            package: Zenith.rpm
+            artifact: zenith-fedora-44-x86_64.rpm
+          - name: Fedora 44 (rpm, aarch64 / Asahi)
+            runner: ubuntu-24.04-arm
+            container: fedora:44
+            sudo_flag: "--sudo-off"
+            package: Zenith.rpm
+            artifact: zenith-fedora-44-aarch64.rpm
     steps:
       - name: Install git (container jobs)
         if: matrix.container != ''
