@@ -45,7 +45,11 @@ BuildRequires: openssl-devel
 BuildRequires: pipewire-devel
 BuildRequires: rpm-build
 BuildRequires: systemd-rpm-macros
-BuildRequires: wget
+# Depend on the path, not the package: `wget` provides it through F43 and on
+# openSUSE, the `wget2-wget` shim from F44 on. A plain `BuildRequires: wget` is
+# unsatisfiable on F44 and kills the build at dependency resolution, before
+# anything is compiled. Used below to fetch the CUDA installer.
+BuildRequires: /usr/bin/wget
 BuildRequires: which
 
 %if 0%{?fedora}
@@ -55,15 +59,15 @@ BuildRequires: appstream
 BuildRequires: glslc
 BuildRequires: libappstream-glib
 BuildRequires: vulkan-loader-devel
-%if 0%{fedora} > 43
-# needed for npm from nvm
-BuildRequires: libatomic
-%endif
 BuildRequires: libgudev
 BuildRequires: mesa-libGL-devel
 BuildRequires: mesa-libgbm-devel
 BuildRequires: miniupnpc-devel
-%if 0%{?fedora} < 44
+# F44 dropped the unversioned nodejs-npm for versioned streams, so the package
+# name has to be pinned from there on.
+%if 0%{?fedora} >= 44
+BuildRequires: nodejs24-npm-bin
+%else
 BuildRequires: nodejs-npm
 %endif
 BuildRequires: numactl-devel
@@ -325,39 +329,6 @@ else
   cmake_args+=("-DSUNSHINE_ENABLE_CUDA=OFF")
 fi
 
-# Install and setup NVM for Fedora 44+
-%if 0%{?fedora} > 43
-echo "Installing NVM for Fedora 44+..."
-export HOME=${HOME:-/builddir}
-export NVM_DIR="$HOME/.nvm"
-
-# Install NVM
-if [ ! -d "$NVM_DIR" ]; then
-  wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
-fi
-
-# Load NVM
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-
-# Install and use Node.js
-nvm install node
-nvm use node
-
-echo "Node.js version: $(node --version)"
-echo "npm version: $(npm --version)"
-echo "npm location: $(which npm)"
-echo "node location: $(which node)"
-
-# Add npm and node path to cmake args
-NPM_PATH=$(which npm)
-NODE_PATH=$(which node)
-cmake_args+=("-DNPM=${NPM_PATH}")
-
-# Add node bin directory to PATH for make
-export PATH="$(dirname ${NODE_PATH}):${PATH}"
-%endif
-
 # setup the version
 export BRANCH=%{branch}
 export BUILD_VERSION=v%{build_version}
@@ -394,21 +365,6 @@ cd %{_builddir}/Sunshine/build
 xvfb-run ./tests/test_sunshine
 
 %install
-# Load NVM for Fedora 44+ so npm is available during make install
-%if 0%{?fedora} > 43
-export HOME=${HOME:-/builddir}
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-nvm use node
-
-# Add node bin directory to PATH for make install
-NODE_PATH=$(which node)
-export PATH="$(dirname ${NODE_PATH}):${PATH}"
-
-echo "Node.js version: $(node --version)"
-echo "npm version: $(npm --version)"
-%endif
-
 cd %{_builddir}/Sunshine/build
 %make_install
 
