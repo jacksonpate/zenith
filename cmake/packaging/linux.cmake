@@ -172,10 +172,12 @@ endif()
 
 # This should automatically figure out dependencies on packages
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
-# Zenith replaces the upstream sunshine package on the same file paths
+# Zenith and a distro `sunshine` are the same app under different names; installing one should
+# supersede the other, not run a second host on the same ports. Conflicts + Replaces gives that
+# clean takeover. No Provides: since the rename, Zenith installs /usr/bin/zenith rather than
+# /usr/bin/sunshine, so it must not claim to satisfy a `sunshine` dependency.
 set(CPACK_DEBIAN_PACKAGE_CONFLICTS "sunshine")
 set(CPACK_DEBIAN_PACKAGE_REPLACES "sunshine")
-set(CPACK_DEBIAN_PACKAGE_PROVIDES "sunshine")
 set(CPACK_RPM_PACKAGE_AUTOREQ ON)
 
 # application icon
