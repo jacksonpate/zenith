@@ -250,7 +250,7 @@ jobs:
           set -euo pipefail
 
           binaries=(
-            build/sunshine.exe
+            build/zenith.exe
             build/tools/audio-info.exe
             build/tools/dxgi-info.exe
             build/tools/sunshinesvc.exe
@@ -299,7 +299,7 @@ jobs:
           certificate-profile-name: ${{ inputs.azure_signing_cert_profile }}
           endpoint: ${{ inputs.azure_signing_endpoint }}
           files: |
-            ${{ github.workspace }}/build/sunshine.exe
+            ${{ github.workspace }}/build/zenith.exe
             ${{ github.workspace }}/build/tools/audio-info.exe
             ${{ github.workspace }}/build/tools/dxgi-info.exe
             ${{ github.workspace }}/build/tools/sunshinesvc.exe
