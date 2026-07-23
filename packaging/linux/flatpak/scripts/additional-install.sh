@@ -2,9 +2,9 @@
 
 # User Service
 mkdir -p ~/.config/systemd/user
-cp "/app/share/sunshine/systemd/user/app-dev.lizardbyte.app.Sunshine.service" "$HOME/.config/systemd/user/app-dev.lizardbyte.app.Sunshine.service"
+cp "/app/share/sunshine/systemd/user/app-io.github.jacksonpate.Zenith.service" "$HOME/.config/systemd/user/app-io.github.jacksonpate.Zenith.service"
 echo "Sunshine User Service has been installed."
-echo "Use [systemctl --user enable app-dev.lizardbyte.app.Sunshine] once to autostart Sunshine on login."
+echo "Use [systemctl --user enable app-io.github.jacksonpate.Zenith] once to autostart Sunshine on login."
 
 # Load uhid (DS5 emulation)
 UHID=$(cat /app/share/sunshine/modules-load.d/60-sunshine.conf)

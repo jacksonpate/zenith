@@ -5,6 +5,9 @@ if(APPLE AND NOT SUNSHINE_BUILD_HOMEBREW)
     add_executable(sunshine MACOSX_BUNDLE ${SUNSHINE_TARGET_FILES})
 else()
     add_executable(sunshine ${SUNSHINE_TARGET_FILES})
+    # The CMake target keeps its internal name; the installed binary is `zenith`.
+    # macOS sets its own OUTPUT_NAME (the .app bundle) in targets/macos.cmake.
+    set_target_properties(sunshine PROPERTIES OUTPUT_NAME zenith)
 endif()
 foreach(dep ${SUNSHINE_TARGET_DEPENDENCIES})
     add_dependencies(sunshine ${dep})  # compile these before sunshine
