@@ -15,12 +15,12 @@
 %endif
 %endif
 
-Name: Sunshine
+Name: Zenith
 Version: %{build_version}
 Release: 1%{?dist}
 Summary: Self-hosted game stream host for Moonlight.
 License: GPLv3-only
-URL: https://github.com/LizardByte/Sunshine
+URL: https://github.com/jacksonpate/zenith
 Source0: tarball.tar.gz
 
 # Common BuildRequires
@@ -235,16 +235,16 @@ cmake_args=(
   "-DBUILD_WERROR=ON"
   "-DCMAKE_BUILD_TYPE=Release"
   "-DCMAKE_INSTALL_PREFIX=%{_prefix}"
-  "-DSUNSHINE_ASSETS_DIR=%{_datadir}/sunshine"
-  "-DSUNSHINE_EXECUTABLE_PATH=%{_bindir}/sunshine"
+  "-DSUNSHINE_ASSETS_DIR=%{_datadir}/zenith"
+  "-DSUNSHINE_EXECUTABLE_PATH=%{_bindir}/zenith"
   "-DSUNSHINE_ENABLE_DRM=ON"
   "-DSUNSHINE_ENABLE_KWIN=ON"
   "-DSUNSHINE_ENABLE_PORTAL=ON"
   "-DSUNSHINE_ENABLE_WAYLAND=ON"
   "-DSUNSHINE_ENABLE_X11=ON"
-  "-DSUNSHINE_PUBLISHER_NAME=LizardByte"
-  "-DSUNSHINE_PUBLISHER_WEBSITE=https://app.lizardbyte.dev"
-  "-DSUNSHINE_PUBLISHER_ISSUE_URL=https://app.lizardbyte.dev/support"
+  "-DSUNSHINE_PUBLISHER_NAME=jacksonpate"
+  "-DSUNSHINE_PUBLISHER_WEBSITE=https://github.com/jacksonpate/zenith"
+  "-DSUNSHINE_PUBLISHER_ISSUE_URL=https://github.com/jacksonpate/zenith/issues"
 )
 
 %if 0%{?fedora}
@@ -396,7 +396,7 @@ fi
 
 %files
 # Executables
-%caps(cap_sys_admin,cap_sys_nice+p) %{_bindir}/sunshine
+%caps(cap_sys_admin,cap_sys_nice+p) %{_bindir}/zenith
 
 # Systemd unit files for user services
 %{_userunitdir}/*.service
@@ -417,6 +417,6 @@ fi
 %{_datadir}/metainfo/*.metainfo.xml
 
 # Assets
-%{_datadir}/sunshine/**
+%{_datadir}/zenith/**
 
 %changelog
