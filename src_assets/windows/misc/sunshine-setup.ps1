@@ -360,7 +360,7 @@ function Invoke-ScriptIfExist {
     }
 }
 
-# Function to execute sunshine.exe with arguments if it exists
+# Function to execute zenith.exe with arguments if it exists
 function Invoke-SunshineIfExist {
     param(
         [string]$Arguments,
@@ -372,7 +372,7 @@ function Invoke-SunshineIfExist {
         Write-LogMessage -Message "$Emoji $Description" -Level "Step"
     }
 
-    $SunshinePath = Join-Path $RootDir "sunshine.exe"
+    $SunshinePath = Join-Path $RootDir "zenith.exe"
 
     if (Test-Path $SunshinePath) {
         Write-LogMessage -Message "Executing: $SunshinePath $Arguments" -Level "Information"
