@@ -49,6 +49,48 @@
    Dark Themes
    ========================================================================== */
 
+/* Zenith Theme - the signature look: deep-space indigo, aurora violet, comet cyan */
+[data-theme="zenith"] {
+    --color-primary: #a855f7;
+    --color-primary-hover: #9333ea;
+    --color-primary-light: rgba(168, 85, 247, 0.14);
+    --color-accent: #22d3ee;
+    --color-accent-hover: #06b6d4;
+    --color-accent-light: rgba(34, 211, 238, 0.12);
+    --color-success: #34d399;
+    --color-success-hover: #10b981;
+    --color-success-light: rgba(52, 211, 153, 0.12);
+    --color-danger: #fb7185;
+    --color-danger-hover: #f43f5e;
+    --color-danger-light: rgba(251, 113, 133, 0.12);
+    --color-warning: #fbbf24;
+    --color-warning-hover: #f59e0b;
+    --color-warning-light: rgba(251, 191, 36, 0.12);
+    --color-info: #38bdf8;
+    --color-info-hover: #0ea5e9;
+    --color-info-light: rgba(56, 189, 248, 0.12);
+
+    --color-on-primary: #ffffff;
+    --color-on-warning: #1a1025;
+
+    --color-bg-base: #0a0a16;
+    --color-bg-subtle: #0e0e1e;
+    --color-bg-muted: #16162a;
+    --color-surface: #12122299;
+    --color-surface-raised: #1a1a30;
+
+    --color-border: rgba(168, 85, 247, 0.14);
+    --color-border-strong: rgba(168, 85, 247, 0.32);
+
+    --color-text-base: #ececf6;
+    --color-text-muted: #a7a4c0;
+    --color-text-subtle: #6f6c8a;
+
+    --navbar-bg: rgba(10, 10, 22, 0.72);
+    --navbar-text: #ececf6;
+    --navbar-text-muted: rgba(236, 236, 246, 0.7);
+}
+
 /* Dark Theme - Simple clean dark design */
 [data-theme="dark"] {
     --color-primary: #0d6efd;
@@ -2684,4 +2726,429 @@ p {
 
 [data-bs-theme="dark"] a {
   color: var(--zen-uv-light);
+}
+
+/* ==========================================================================
+   ZENITH DESIGN LANGUAGE
+   Appended last on purpose: at equal specificity, these rules win the
+   cascade, so this layer IS the look. Theme variables above stay authorita-
+   tive for color, which keeps every named theme working — this layer only
+   speaks in var()s and color-mix() so it reskins all of them at once.
+   ========================================================================== */
+
+/* ---- Type & rhythm -------------------------------------------------------- */
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+        'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji',
+        'Segoe UI Emoji';
+    font-size: 0.9375rem;
+    letter-spacing: 0.01em;
+    -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6,
+.h1, .h2, .h3, .h4, .h5, .h6 {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+h1, .h1 { font-size: clamp(1.6rem, 1.2rem + 1.2vw, 2.1rem); }
+
+.monospace,
+code, kbd, pre, samp {
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular,
+        Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
+/* ---- Page canvas: the nebula --------------------------------------------- */
+
+body {
+    background-image:
+        radial-gradient(60rem 40rem at 8% -10%,
+            color-mix(in srgb, var(--color-primary) 9%, transparent), transparent 60%),
+        radial-gradient(50rem 36rem at 105% 15%,
+            color-mix(in srgb, var(--color-accent, var(--color-info)) 7%, transparent), transparent 60%),
+        radial-gradient(40rem 40rem at 50% 120%,
+            color-mix(in srgb, var(--color-primary) 6%, transparent), transparent 55%);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+}
+
+/* ---- Navbar: glass over the sky ------------------------------------------ */
+
+.navbar-sunshine {
+    background: var(--navbar-bg) !important;
+    backdrop-filter: blur(14px) saturate(1.35);
+    -webkit-backdrop-filter: blur(14px) saturate(1.35);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 22%, transparent);
+    box-shadow: 0 8px 28px -20px color-mix(in srgb, var(--color-primary) 55%, transparent);
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+    position: sticky;
+    top: 0;
+    z-index: 1030;
+}
+
+.navbar-sunshine .navbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+
+.navbar-sunshine .navbar-brand img {
+    height: 30px;
+    filter: drop-shadow(0 0 8px color-mix(in srgb, var(--color-primary) 60%, transparent));
+}
+
+.brand-wordmark {
+    font-size: 1.05rem;
+    background: linear-gradient(92deg,
+        var(--navbar-text) 20%,
+        color-mix(in srgb, var(--color-primary) 70%, var(--navbar-text)) 75%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+}
+
+.navbar-sunshine .nav-link {
+    border-radius: 10px;
+    padding: 0.45rem 0.8rem;
+    margin-inline: 0.1rem;
+    font-weight: 500;
+    transition: background-color var(--transition-fast, 150ms ease),
+                color var(--transition-fast, 150ms ease);
+}
+
+.navbar-sunshine .nav-link:hover {
+    background: color-mix(in srgb, var(--navbar-text) 10%, transparent);
+}
+
+.navbar-sunshine .nav-link.active {
+    background: color-mix(in srgb, var(--color-primary) 26%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 40%, transparent);
+    color: var(--navbar-text) !important;
+}
+
+/* ---- Surfaces: cards, modals, dropdowns ----------------------------------- */
+
+.card {
+    border: 1px solid var(--color-border) !important;
+    border-radius: 18px;
+    box-shadow:
+        0 1px 0 color-mix(in srgb, #ffffff 4%, transparent) inset,
+        0 18px 40px -28px rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.card-header {
+    background: color-mix(in srgb, var(--color-text-base) 3%, transparent) !important;
+    border-bottom: 1px solid var(--color-border) !important;
+    border-radius: 18px 18px 0 0 !important;
+    font-weight: 600;
+}
+
+.modal-content {
+    border: 1px solid var(--color-border-strong) !important;
+    border-radius: 18px;
+    background-color: var(--color-surface-raised) !important;
+    box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.7),
+        0 0 0 1px color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+.dropdown-menu {
+    border: 1px solid var(--color-border-strong) !important;
+    border-radius: 14px;
+    padding: 0.4rem;
+    background-color: var(--color-surface-raised) !important;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 20px 50px -20px rgba(0, 0, 0, 0.6);
+}
+
+.dropdown-item {
+    border-radius: 9px;
+    padding: 0.45rem 0.7rem;
+}
+
+.dropdown-item.active,
+.dropdown-item:active {
+    background: color-mix(in srgb, var(--color-primary) 28%, transparent) !important;
+    color: var(--color-text-base) !important;
+}
+
+/* ---- Buttons -------------------------------------------------------------- */
+
+.btn {
+    border-radius: 11px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    padding: 0.45rem 1rem;
+    transition: transform var(--transition-fast, 150ms ease),
+                box-shadow var(--transition-fast, 150ms ease),
+                background-color var(--transition-fast, 150ms ease);
+}
+
+.btn:active { transform: translateY(1px); }
+
+.btn-primary {
+    background: linear-gradient(135deg,
+        var(--color-primary) 0%,
+        color-mix(in srgb, var(--color-primary) 62%, var(--color-accent, var(--color-info))) 100%) !important;
+    border: 1px solid color-mix(in srgb, var(--color-primary) 60%, transparent) !important;
+}
+
+.btn-primary:hover {
+    box-shadow: 0 6px 22px -6px color-mix(in srgb, var(--color-primary) 70%, transparent);
+}
+
+.btn-outline-primary {
+    border-radius: 11px;
+}
+
+/* ---- Forms ---------------------------------------------------------------- */
+
+.form-control,
+.form-select {
+    border-radius: 11px;
+    border: 1px solid var(--color-border-strong) !important;
+    background-color: color-mix(in srgb, var(--color-bg-base) 55%, var(--color-surface-raised)) !important;
+    padding: 0.5rem 0.8rem;
+    transition: border-color var(--transition-fast, 150ms ease),
+                box-shadow var(--transition-fast, 150ms ease);
+}
+
+.form-control:focus,
+.form-select:focus,
+.form-check-input:focus {
+    border-color: var(--color-primary) !important;
+    box-shadow: 0 0 0 0.22rem color-mix(in srgb, var(--color-primary) 22%, transparent) !important;
+}
+
+.form-check-input:checked {
+    background-color: var(--color-primary) !important;
+    border-color: var(--color-primary) !important;
+}
+
+.form-label { font-weight: 600; }
+
+/* ---- Tabs / segmented controls -------------------------------------------- */
+
+.nav-tabs {
+    border-bottom: 1px solid var(--color-border) !important;
+    gap: 0.25rem;
+}
+
+.nav-tabs .nav-link {
+    border: none !important;
+    border-radius: 10px 10px 0 0;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    position: relative;
+}
+
+.nav-tabs .nav-link.active {
+    background: color-mix(in srgb, var(--color-primary) 14%, transparent) !important;
+    color: var(--color-text-base) !important;
+}
+
+.nav-tabs .nav-link.active::after {
+    content: "";
+    position: absolute;
+    left: 12%; right: 12%; bottom: -1px;
+    height: 2px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--color-primary),
+        var(--color-accent, var(--color-info)));
+}
+
+/* ---- Tables ---------------------------------------------------------------- */
+
+.table {
+    border-color: var(--color-border) !important;
+    overflow: hidden;
+    border-radius: 12px;
+}
+
+.table > :not(caption) > * > * {
+    background-color: transparent !important;
+    border-bottom-color: var(--color-border) !important;
+}
+
+.table tbody tr:hover > * {
+    background-color: color-mix(in srgb, var(--color-primary) 6%, transparent) !important;
+}
+
+/* ---- Alerts ---------------------------------------------------------------- */
+
+.alert {
+    border-radius: 14px;
+    border-width: 1px;
+    border-left-width: 4px;
+}
+
+/* ---- App library & featured cards ----------------------------------------- */
+
+.app-card,
+.featured-app-card {
+    border-radius: 18px;
+    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.app-card:hover,
+.featured-app-card:hover {
+    transform: translateY(-3px);
+    border-color: color-mix(in srgb, var(--color-primary) 45%, transparent) !important;
+    box-shadow:
+        0 20px 44px -22px rgba(0, 0, 0, 0.6),
+        0 0 24px -8px color-mix(in srgb, var(--color-primary) 45%, transparent);
+}
+
+.app-poster-container { border-radius: 14px; }
+
+.app-poster-overlay {
+    background: linear-gradient(180deg, transparent 30%,
+        color-mix(in srgb, var(--color-bg-base) 88%, transparent) 100%);
+}
+
+/* ---- Config page: sidebar as pills ----------------------------------------- */
+
+.config-nav {
+    border-radius: 16px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.config-nav-list .nav-link,
+.config-nav .nav-link {
+    border-radius: 10px;
+    margin: 2px 6px;
+    font-weight: 500;
+}
+
+.config-nav-list .nav-link.active,
+.config-nav .nav-link.active {
+    background: linear-gradient(135deg,
+        color-mix(in srgb, var(--color-primary) 30%, transparent),
+        color-mix(in srgb, var(--color-primary) 16%, transparent)) !important;
+    box-shadow: inset 2px 0 0 var(--color-primary);
+    color: var(--color-text-base) !important;
+}
+
+.config-search .form-control { border-radius: 999px !important; }
+
+/* ---- Logs: a proper terminal ----------------------------------------------- */
+
+.troubleshooting-logs {
+    background: color-mix(in srgb, var(--color-bg-base) 82%, #000000) !important;
+    border: 1px solid var(--color-border-strong) !important;
+    border-radius: 14px;
+    box-shadow: inset 0 2px 18px rgba(0, 0, 0, 0.45);
+    font-size: 0.82rem;
+    line-height: 1.55;
+}
+
+/* ---- Auth shell: welcome / pin / password / logout -------------------------- */
+
+.auth-shell {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+}
+
+.auth-stage {
+    width: 100%;
+    max-width: 1020px;
+    display: flex;
+    gap: 2.5rem;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.auth-hero { flex: 1 1 340px; max-width: 460px; }
+
+.auth-hero .auth-logo {
+    height: 72px;
+    filter: drop-shadow(0 0 24px color-mix(in srgb, var(--color-primary) 65%, transparent));
+}
+
+.auth-title {
+    font-size: clamp(2.2rem, 1.6rem + 2vw, 3.2rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin: 0.75rem 0 0.25rem;
+    background: linear-gradient(94deg,
+        var(--color-text-base) 25%,
+        var(--color-primary) 60%,
+        var(--color-accent, var(--color-info)) 95%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+}
+
+.auth-tagline { color: var(--color-text-muted); font-size: 1.02rem; }
+
+.auth-card {
+    flex: 1 1 340px;
+    max-width: 430px;
+    border-radius: 20px;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface-raised);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow:
+        0 30px 70px -30px rgba(0, 0, 0, 0.65),
+        0 0 40px -18px color-mix(in srgb, var(--color-primary) 50%, transparent);
+    padding: 1.8rem 1.6rem;
+}
+
+.auth-card .form-control { padding: 0.65rem 0.9rem; }
+
+.auth-divider {
+    height: 3px;
+    width: 46px;
+    border-radius: 3px;
+    margin-bottom: 1.1rem;
+    background: linear-gradient(90deg, var(--color-primary),
+        var(--color-accent, var(--color-info)));
+}
+
+/* ---- Details --------------------------------------------------------------- */
+
+::selection {
+    background: color-mix(in srgb, var(--color-primary) 40%, transparent);
+}
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-bg-muted)) transparent;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--color-primary) 35%, var(--color-bg-muted));
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+::-webkit-scrollbar-track { background: transparent; }
+
+:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--color-primary) 65%, transparent);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-card, .featured-app-card, .btn { transition: none; }
+    .app-card:hover, .featured-app-card:hover { transform: none; }
 }

@@ -7,31 +7,34 @@
 
 <body id="app" v-cloak>
   <Notification></Notification>
-  <main role="main" style="max-width: 1200px; margin: 1em auto">
-    <div class="d-flex gap-4">
-      <div class="card p-2">
-        <header>
-          <h1 class="mb-0">
-            <img src="./images/logo-sunshine-45.png" height="45" alt="">
-            {{ $t('welcome.greeting') }}
-          </h1>
-        </header>
-        <p class="my-2 align-self-start">{{ $t('welcome.create_creds') }}</p>
+  <main role="main" class="auth-shell">
+    <div class="auth-stage">
+      <div class="auth-hero text-center text-lg-start">
+        <img src="./images/logo-sunshine-45.png" class="auth-logo" alt="">
+        <h1 class="auth-title">Zenith</h1>
+        <p class="auth-tagline">{{ $t('welcome.greeting') }}</p>
+        <p class="auth-tagline mb-4">{{ $t('welcome.create_creds') }}</p>
+        <div class="d-none d-lg-block">
+          <Resource-Card></Resource-Card>
+        </div>
+      </div>
+      <div class="auth-card">
+        <div class="auth-divider"></div>
         <div class="alert alert-warning">
           {{ $t('welcome.create_creds_alert') }}
         </div>
         <form @submit.prevent="save">
-          <div class="mb-2">
+          <div class="mb-3">
             <label for="usernameInput" class="form-label">{{ $t('_common.username') }}</label>
             <input type="text" class="form-control" id="usernameInput" autocomplete="username"
               v-model="passwordData.newUsername" />
           </div>
-          <div class="mb-2">
+          <div class="mb-3">
             <label for="passwordInput" class="form-label">{{ $t('_common.password') }}</label>
             <input type="password" class="form-control" id="passwordInput" autocomplete="new-password"
               v-model="passwordData.newPassword" required />
           </div>
-          <div class="mb-2">
+          <div class="mb-3">
             <label for="confirmPasswordInput" class="form-label">{{ $t('welcome.confirm_password') }}</label>
             <input type="password" class="form-control" id="confirmPasswordInput" autocomplete="new-password"
               v-model="passwordData.confirmNewPassword" required />
@@ -45,7 +48,7 @@
           </div>
         </form>
       </div>
-      <div>
+      <div class="d-lg-none">
         <Resource-Card></Resource-Card>
       </div>
     </div>

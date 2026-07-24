@@ -7,14 +7,15 @@ export const getPreferredTheme = () => {
         return storedTheme
     }
 
-    // Zenith defaults to the moonlight theme for every fresh install,
+    // Zenith defaults to its signature theme for every fresh install,
     // regardless of system preference; users can still switch via the
     // navbar theme menu (their choice is stored in localStorage).
-    return 'moonlight'
+    return 'zenith'
 }
 
 // Define which themes are dark (for Bootstrap compatibility)
 const darkThemes = new Set([
+    'zenith',
     'dark',
     'dracula',
     'ember',

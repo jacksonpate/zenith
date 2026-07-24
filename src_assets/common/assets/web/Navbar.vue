@@ -3,7 +3,8 @@
     <nav class="navbar navbar-expand-lg navbar-sunshine">
       <div class="container-fluid">
         <a class="navbar-brand" href="./" title="Zenith">
-          <img src="/images/logo-sunshine-45.png" height="45" alt="Zenith">
+          <img src="/images/logo-sunshine-45.png" height="30" alt="">
+          <span class="brand-wordmark">Zenith</span>
         </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent"
                 aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
