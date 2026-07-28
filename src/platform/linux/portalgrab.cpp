@@ -2,6 +2,9 @@
  * @file src/platform/linux/portalgrab.cpp
  * @brief Definitions for XDG portal grab.
  */
+// standard includes
+#include <fstream>
+
 // local includes
 #include "pipewire.cpp"
 
