@@ -42,7 +42,19 @@ Why the two odd flags:
 Neither flag is needed when building with the CUDA 13.1 runfile
 (`./scripts/linux_build.sh --cuda-runfile`), which accepts gcc-14 directly.
 
-KMS capture needs capabilities on the binary; the web UI then works from a plain shell:
+A source build has no postinst, so nothing has granted it the file capabilities the deb/rpm
+apply. Let the autopilot find that and everything else it needs:
+
+```bash
+zenith-display doctor        # says what is wrong, offers to fix it — answer Y
+zenith-display fix           # or apply it all without being asked
+```
+
+Skipping this is not a hard failure, which is what makes it worth calling out: without
+`cap_sys_admin` the KMS capture path cannot open a DRM framebuffer, so capture silently falls
+back to the desktop portal and present-paced capture turns off with it (vblank pacing only
+exists on the KMS path). The stream still works — it is just slower, permanently. The log says
+`Failed to gain CAP_SYS_ADMIN` and nothing else. By hand it is:
 
 ```bash
 sudo setcap cap_sys_admin,cap_sys_nice+p build/sunshine

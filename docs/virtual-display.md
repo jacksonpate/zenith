@@ -83,6 +83,21 @@ app's environment (or Zenith's global env) to match.
   re-run `install` with `--modes` including it (reboot applies).
 - Wrong monitor captured during sessions → pin `output_name` in
   `sunshine.conf` to the VDD, or reorder via GNOME display settings.
+- The stream will not reach the frame rate you asked for, and a lower-resolution
+  client on the same host does → run `zenith-display doctor` and read the
+  `encoder` and `binary` lines. Two causes, both invisible from the client:
+  - **The binary has no capabilities.** KMS capture cannot open a DRM
+    framebuffer, so capture drops to the desktop portal and present-paced
+    capture goes with it. `doctor` offers to fix this; a packaged install
+    already has it.
+  - **The virtual display is on a GPU that is not encoding.** On a hybrid
+    laptop the iGPU owns the low-numbered connectors and the dGPU encodes, so a
+    dma-buf cannot be imported into CUDA and every frame is copied through
+    system memory. Zenith now prefers a free port on the encoding GPU
+    automatically; when every one of them is occupied `doctor` says so, and
+    freeing one (unplug a monitor from that card) removes the copy. The cost
+    scales with pixels, which is why 1080p survives it and a tablet's native
+    resolution does not.
 
 ## Windows
 
