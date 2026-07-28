@@ -4,16 +4,37 @@
 echo "Loading uhid kernel module for DS5 emulation."
 modprobe uhid
 
-# Ensure Sunshine can grab images from KMS
-path_to_setcap=$(which setcap)
-path_to_sunshine=$(readlink -f "$(which sunshine)")
-if [ -x "$path_to_setcap" ] ; then
-  echo "Setting CAP_SYS_ADMIN, CAP_SYS_NICE capabilities on Sunshine binary."
-  echo "$path_to_setcap cap_sys_admin,cap_sys_nice+p $path_to_sunshine"
-  $path_to_setcap cap_sys_admin,cap_sys_nice+p $path_to_sunshine
-  echo "CAP_SYS_ADMIN, CAP_SYS_NICE capabilities set on Sunshine binary."
+# Ensure Zenith can grab images from KMS.
+#
+# Resolve the binary by name rather than assuming one: the host binary is
+# `zenith`, and looking only for `sunshine` (as this did until the rename) finds
+# nothing, passes an empty path to setcap, and leaves the package with no
+# capabilities at all. That does not fail the install and does not fail a stream
+# — it silently drops capture to the desktop portal and turns off present-paced
+# capture with it, for the life of the installation.
+path_to_setcap=$(which setcap 2>/dev/null)
+path_to_zenith=""
+for candidate in zenith sunshine ; do
+  found=$(which "$candidate" 2>/dev/null)
+  if [ -n "$found" ] ; then
+    path_to_zenith=$(readlink -f "$found")
+    break
+  fi
+done
+
+if [ -z "$path_to_zenith" ] ; then
+  echo "error: neither 'zenith' nor 'sunshine' is on PATH; cannot set capabilities."
+elif [ ! -x "$path_to_setcap" ] ; then
+  echo "error: setcap not found (install libcap2-bin / libcap), then run:"
+  echo "  sudo setcap cap_sys_admin,cap_sys_nice+p $path_to_zenith"
 else
-  echo "error: setcap not found or not executable."
+  echo "Setting CAP_SYS_ADMIN, CAP_SYS_NICE capabilities on $path_to_zenith."
+  if $path_to_setcap cap_sys_admin,cap_sys_nice+p "$path_to_zenith" ; then
+    echo "CAP_SYS_ADMIN, CAP_SYS_NICE capabilities set."
+  else
+    echo "error: setcap failed. KMS capture will be unavailable; run by hand:"
+    echo "  sudo setcap cap_sys_admin,cap_sys_nice+p $path_to_zenith"
+  fi
 fi
 
 # Trigger udev rule reload for /dev/uinput and /dev/uhid
@@ -38,8 +59,30 @@ fi
 
 # Start Zenith automatically in every user's graphical session so a fresh
 # install streams without anyone hunting for a service to enable.
+#
+# Find the unit rather than name it. The unit is called after the project FQDN,
+# which the rename changed from app-dev.lizardbyte.app.Sunshine.service to
+# app-io.github.jacksonpate.Zenith.service — and a hardcoded name that no longer
+# exists fails silently here, so the service this block exists to enable was
+# never enabled at all. The install still succeeds and the user finds a host
+# that does not come up until they go looking for it.
 if command -v systemctl >/dev/null 2>&1; then
-  echo "Enabling Zenith user service for all users."
-  systemctl --global enable app-dev.lizardbyte.app.Sunshine.service 2>/dev/null \
-    || echo "warning: could not enable the Zenith user service globally."
+  zenith_unit=""
+  for dir in /usr/lib/systemd/user /lib/systemd/user ; do
+    [ -d "$dir" ] || continue
+    for candidate in "$dir"/app-*Zenith.service "$dir"/app-*Sunshine.service ; do
+      if [ -e "$candidate" ] ; then
+        zenith_unit=$(basename "$candidate")
+        break 2
+      fi
+    done
+  done
+
+  if [ -z "$zenith_unit" ] ; then
+    echo "warning: no Zenith user unit found; not enabling anything."
+  else
+    echo "Enabling Zenith user service for all users ($zenith_unit)."
+    systemctl --global enable "$zenith_unit" 2>/dev/null \
+      || echo "warning: could not enable $zenith_unit globally."
+  fi
 fi
