@@ -230,3 +230,68 @@ def test_nothing_to_offer_is_success():
 
 def test_detail_paragraphs_are_indented_as_one_block():
     assert _block("first\nsecond", "  ") == "  first\n  second"
+
+
+# ------------------------------------------------------------------- CUDA
+
+
+def _nvidia_env(**kw):
+    return _env(connectors=[_conn("DP-6", "card0", "nvidia", VENDOR_NVIDIA)],
+                encoder_card="card0", **kw)
+
+
+def _fake_binary(tmp_path, *markers) -> str:
+    path = tmp_path / "zenith"
+    path.write_bytes(b"padding" * 500 + b"".join(markers) + b"tail" * 500)
+    return str(path)
+
+
+def test_a_build_without_cuda_is_reported_on_an_nvidia_host(tmp_path, monkeypatch):
+    """kmsgrab refuses NVENC outright without CUDA and reverts to GPU -> RAM ->
+    GPU, so zero-copy is unreachable however well the VDD is placed. The marker
+    string exists only inside `#ifndef SUNSHINE_BUILD_CUDA`, which makes its
+    presence proof rather than inference."""
+    binary = _fake_binary(tmp_path, remedy._KMS_MARKER, remedy._NO_CUDA_MARKER)
+    monkeypatch.setattr(remedy, "find_binary", lambda cwd=None: binary)
+    adv = remedy.check_cuda(_nvidia_env())
+    assert adv is not None
+    assert "without CUDA" in adv.problem
+    assert "GPU -> RAM -> GPU" in adv.detail
+
+
+def test_a_build_with_cuda_says_nothing(tmp_path, monkeypatch):
+    binary = _fake_binary(tmp_path, remedy._KMS_MARKER)
+    monkeypatch.setattr(remedy, "find_binary", lambda cwd=None: binary)
+    assert remedy.check_cuda(_nvidia_env()) is None
+
+
+def test_a_build_without_the_kms_path_is_not_diagnosed_as_missing_cuda(tmp_path, monkeypatch):
+    """No kmsgrab means the marker could not be there whatever CUDA did, so its
+    absence says nothing. Reporting "built with CUDA" here would be a guess."""
+    binary = _fake_binary(tmp_path, b"unrelated content")
+    monkeypatch.setattr(remedy, "find_binary", lambda cwd=None: binary)
+    assert remedy.check_cuda(_nvidia_env()) is None
+
+
+def test_an_amd_host_is_not_asked_for_cuda(tmp_path, monkeypatch):
+    """vaapi needs no CUDA, so the warning would be pure noise."""
+    binary = _fake_binary(tmp_path, remedy._KMS_MARKER, remedy._NO_CUDA_MARKER)
+    monkeypatch.setattr(remedy, "find_binary", lambda cwd=None: binary)
+    env = _env(connectors=[_conn("DP-1", "card1", "amdgpu", VENDOR_AMD)], encoder_card="card1")
+    assert remedy.check_cuda(env) is None
+
+
+def test_a_marker_split_across_two_reads_is_still_found(tmp_path, monkeypatch):
+    """The file is scanned a megabyte at a time; a marker straddling a boundary
+    must not fall through the gap."""
+    path = tmp_path / "zenith"
+    chunk = 1 << 20
+    head = b"x" * (chunk - len(remedy._NO_CUDA_MARKER) // 2)
+    path.write_bytes(head + remedy._NO_CUDA_MARKER + b"y" * 64 + remedy._KMS_MARKER)
+    monkeypatch.setattr(remedy, "find_binary", lambda cwd=None: str(path))
+    assert remedy.check_cuda(_nvidia_env()) is not None
+
+
+def test_an_unreadable_binary_is_not_diagnosed(tmp_path, monkeypatch):
+    monkeypatch.setattr(remedy, "find_binary", lambda cwd=None: str(tmp_path / "nope"))
+    assert remedy.check_cuda(_nvidia_env()) is None

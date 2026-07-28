@@ -25,6 +25,7 @@ import struct
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from .detect import VENDOR_NVIDIA
 from .runner import Runner
 
 # Capability bit numbers, from linux/capability.h.
@@ -249,10 +250,83 @@ def check_gpu_affinity(env) -> Optional[Advisory]:
     )
 
 
+# Marker strings compiled into the host binary. The first exists *only* in a
+# build without CUDA — it is the body of an `#ifndef SUNSHINE_BUILD_CUDA` guard
+# in kmsgrab.cpp — which makes its presence positive proof, not an inference.
+# The second says the KMS path was compiled at all, so that a build with no DRM
+# support is not mistaken for one that has CUDA.
+_NO_CUDA_MARKER = b"Attempting to use NVENC without CUDA support"
+_KMS_MARKER = b"Found monitor for DRM screencasting"
+
+
+def _binary_contains(path: str, needles) -> Optional[dict]:
+    """Which of these byte strings appear in the file, or None if unreadable."""
+    found = {n: False for n in needles}
+    try:
+        with open(path, "rb") as fh:
+            tail = b""
+            while chunk := fh.read(1 << 20):
+                window = tail + chunk
+                for needle in needles:
+                    if not found[needle] and needle in window:
+                        found[needle] = True
+                if all(found.values()):
+                    break
+                # Carry enough of the tail that a marker split across two reads
+                # is still seen whole.
+                tail = window[-max(len(n) for n in needles):]
+    except OSError:
+        return None
+    return found
+
+
+def check_cuda(env, cwd: Optional[str] = None) -> Optional[Advisory]:
+    """Warn when NVENC will encode but the binary was built without CUDA.
+
+    ``kmsgrab.cpp`` refuses the KMS path outright for a CUDA memory type when
+    ``SUNSHINE_BUILD_CUDA`` is undefined, and reverts to GPU -> RAM -> GPU. So on
+    an NVIDIA host a build without CUDA cannot do zero-copy capture *at all*, no
+    matter how correctly the virtual display is placed or how many capabilities
+    the binary has.
+
+    It is worth surfacing here rather than leaving in the log, because it is one
+    warning line among hundreds at startup, it only appears once the capability
+    fix has let the host reach kmsgrab in the first place, and its symptom — a
+    frame rate that will not climb — is identical to every other cause.
+    """
+    if not env.encoder_card:
+        return None
+    nvidia = any(c.card == env.encoder_card and (c.vendor == VENDOR_NVIDIA or c.driver.startswith("nvidia"))
+                 for c in env.connectors)
+    if not nvidia:
+        return None  # vaapi does not need CUDA
+    binary = find_binary(cwd)
+    if binary is None:
+        return None
+    found = _binary_contains(binary, (_NO_CUDA_MARKER, _KMS_MARKER))
+    if found is None or not found[_KMS_MARKER]:
+        return None  # unreadable, or no KMS path to speak of
+    if not found[_NO_CUDA_MARKER]:
+        return None  # built with CUDA
+    return Advisory(
+        key="cuda",
+        problem=f"{binary} was built without CUDA, and NVENC will encode",
+        detail=(
+            "KMS capture refuses NVENC entirely without CUDA and falls back to copying every\n"
+            "frame GPU -> RAM -> GPU, so zero-copy capture is unreachable on this host however\n"
+            "the virtual display is placed. The official packages ship CUDA; a local build\n"
+            "needs the toolkit at compile time:\n"
+            "  ./scripts/linux_build.sh --cuda-runfile\n"
+            "Reinstalling an official release is the quicker fix if you are not developing."
+        ),
+    )
+
+
 def collect(env, cwd: Optional[str] = None):
     """Every fixable problem, and every advisory, for this machine."""
     remedies = [r for r in (check_capabilities(env, cwd),
                             check_helper(env),
                             check_evdi(env)) if r is not None]
-    advisories = [a for a in (check_gpu_affinity(env),) if a is not None]
+    advisories = [a for a in (check_gpu_affinity(env),
+                              check_cuda(env, cwd)) if a is not None]
     return remedies, advisories
