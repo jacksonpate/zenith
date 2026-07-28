@@ -12,7 +12,8 @@
     zenith-display forget           drop it and relearn on the next desktop
     zenith-display setup            one-time privileged bootstrap (module,
                                     package, permissions) — run at install
-    zenith-display doctor           human diagnosis + bootstrap hints
+    zenith-display doctor           human diagnosis, and an offer to fix it
+    zenith-display fix              apply every fix without asking first
 
 ``headless``/``dual`` are wired into Zenith's default apps.json as prep
 commands, with ``restore`` as their undo.  When no VDD provider is available
@@ -29,7 +30,7 @@ import logging
 import sys
 from typing import Optional
 
-from . import __version__, providers, snapshot
+from . import __version__, providers, remedy, snapshot
 from . import detect as detect_mod
 from .layouts import get_backend, gnome, kscreen, wlr, xrandr
 from .modes import client_mode
@@ -48,6 +49,66 @@ EXIT_OK = 0
 EXIT_NO_PROVIDER = 3
 EXIT_NO_BACKEND = 4
 EXIT_APPLY_FAILED = 5
+EXIT_NEEDS_FIXING = 6
+
+
+def _block(text: str, indent: str) -> str:
+    """Re-indent a detail paragraph so every line lands under the first one."""
+    return "\n".join(indent + line.strip() for line in text.strip().splitlines())
+
+
+def _report(remedies, advisories) -> None:
+    """Print what is wrong, what it costs, and the exact command that fixes it."""
+    for adv in advisories:
+        print(f"\n  ! {adv.problem}")
+        print(_block(adv.detail, "    "))
+    for i, rem in enumerate(remedies, 1):
+        print(f"\n  {i}. {rem.problem}")
+        print(_block(rem.detail, "     "))
+        for line in rem.shell().splitlines():
+            print(f"       $ {line}")
+
+
+def _offer(remedies, env, runner: Runner, assume_yes: bool) -> int:
+    """Offer to run the fixes, then run the ones the user accepted.
+
+    Printing a command and trusting the user to carry it out is where this used to
+    end, and it is the step most people never take — so ask, once, and do it.
+    Outside a terminal (a package hook, CI, a pipe) there is nobody to ask: say
+    what is needed and exit with a code a script can branch on.
+    """
+    if not remedies:
+        return EXIT_OK
+    if not assume_yes:
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            print(f"\n  {len(remedies)} fix(es) needed. Run `zenith-display fix` to apply them.")
+            return EXIT_NEEDS_FIXING
+        noun = "fix" if len(remedies) == 1 else "fixes"
+        try:
+            answer = input(f"\n  Apply {len(remedies)} {noun} now? [Y/n] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return EXIT_NEEDS_FIXING
+        if answer not in ("", "y", "yes"):
+            print("  Nothing changed. The commands above will do it by hand.")
+            return EXIT_NEEDS_FIXING
+
+    failed = []
+    for rem in remedies:
+        print(f"  ... {rem.key}")
+        try:
+            ok = rem.apply(env, runner)
+        except Exception as exc:  # a broken fix must not take the diagnosis with it
+            log.error("%s: %s", rem.key, exc)
+            ok = False
+        if not ok:
+            failed.append(rem)
+    if failed:
+        print(f"\n  could not apply: {', '.join(r.key for r in failed)}")
+        print("  the commands above are exactly what is needed, if it is easier by hand.")
+        return EXIT_APPLY_FAILED
+    print("\n  done — re-run `zenith-display doctor` to confirm.")
+    return EXIT_OK
 
 
 def cmd_probe(args) -> int:
@@ -464,6 +525,24 @@ def cmd_setup(args) -> int:
     for entry in report:
         state = "ok" if entry["available"] else "--"
         print(f"  {state} {entry['provider']:<18} {entry['reason']}")
+
+    # Everything the packaging would have done. `setup` is what a source build has
+    # instead of a postinst, so the file capabilities belong here too — that they
+    # only ever lived in the rpm spec is the whole reason KMS capture was off.
+    caps = remedy.check_capabilities(env)
+    if caps and not args.dry_run:
+        print(f"  .. {caps.problem}")
+        if caps.apply(env, runner):
+            print(f"  ok capabilities        {', '.join(remedy.REQUIRED_CAPS)} granted")
+        else:
+            print("  -- capabilities        could not be granted; run:")
+            for line in caps.shell().splitlines():
+                print(f"       $ {line}")
+
+    for adv in remedy.collect(env)[1]:
+        print(f"\n  ! {adv.problem}")
+        print(f"    {adv.detail}")
+
     if chosen:
         print(f"setup complete — provider ready: {chosen.name}")
         return EXIT_OK
@@ -494,6 +573,20 @@ def cmd_doctor(args) -> int:
     connectors = ", ".join(
         f"{c.name}[{c.status}{'/VDD' if c.is_vdd else ''}]" for c in env.connectors) or "-"
     print(f"  connectors: {connectors}")
+    # Which card encodes decides where the virtual display belongs, so it is not a
+    # detail — it is the thing that explains an unexplained frame-rate ceiling.
+    encoding = env.encoder_card or "none (software encode)"
+    if env.encoder_card:
+        drivers = {c.driver for c in env.connectors if c.card == env.encoder_card and c.driver}
+        if drivers:
+            encoding += f" ({'/'.join(sorted(drivers))})"
+    print(f"  encoder   : {encoding}")
+    binary = remedy.find_binary()
+    if binary:
+        lacking = remedy.missing_caps(binary)
+        caps = "ok" if lacking == [] else ("unknown" if lacking is None
+                                           else f"MISSING {', '.join(lacking)}")
+        print(f"  binary    : {binary} [{caps}]")
     print("  providers :")
     for entry in report:
         mark = "*" if chosen and entry["provider"] == chosen.name else " "
@@ -505,10 +598,44 @@ def cmd_doctor(args) -> int:
               f"{detect_mod.NVENC_MIN_DRIVER} — nvenc will refuse and streams")
         print("  silently fall back to CPU encoding (libx264). Update the driver")
         print("  to get hardware encoding back.")
-    if not chosen:
-        print("\n  No provider is ready. Run `sudo zenith-display setup` — it loads or")
-        print("  installs whatever this machine needs (evdi module, permissions).")
-    return EXIT_OK if chosen else EXIT_NO_PROVIDER
+
+    remedies, advisories = remedy.collect(env)
+    if not remedies and not advisories:
+        if chosen:
+            print("\n  Nothing to fix — this machine is ready.")
+        else:
+            print("\n  No provider is ready. Run `sudo zenith-display setup` — it loads or")
+            print("  installs whatever this machine needs (evdi module, permissions).")
+        return EXIT_OK if chosen else EXIT_NO_PROVIDER
+
+    _report(remedies, advisories)
+    # `doctor` is diagnostic by default; a dry run must stay one.
+    if args.dry_run:
+        return EXIT_NEEDS_FIXING if remedies else EXIT_OK
+    return _offer(remedies, env, Runner(), assume_yes=args.yes)
+
+
+def cmd_fix(args) -> int:
+    """Apply every fix this machine needs, without the diagnosis around it.
+
+    What the packaging calls at install time, and what a user runs after `doctor`
+    has told them what is wrong.
+    """
+    runner = Runner(dry_run=args.dry_run)
+    env = detect_mod.detect(runner=runner)
+    remedies, advisories = remedy.collect(env)
+    if not remedies:
+        for adv in advisories:
+            print(f"  ! {adv.problem}")
+            print(f"    {adv.detail}")
+        print("nothing to fix — this machine is ready.")
+        return EXIT_OK
+    _report(remedies, advisories)
+    if args.dry_run:
+        return EXIT_NEEDS_FIXING
+    # `fix` is the imperative form: the user already asked for it by name, so it
+    # does not ask again unless it is about to need a password it cannot get.
+    return _offer(remedies, env, runner, assume_yes=True)
 
 
 def main(argv=None) -> int:
@@ -524,9 +651,11 @@ def main(argv=None) -> int:
                              "occupy every port on the machine")
     parser.add_argument("--strict", action="store_true",
                         help="exit nonzero instead of degrading to the plain desktop")
+    parser.add_argument("--yes", "-y", action="store_true",
+                        help="apply fixes without asking (for scripts and package hooks)")
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("probe", "plan", "headless", "dual", "restore", "remember", "forget",
-                 "setup", "doctor"):
+                 "setup", "doctor", "fix"):
         sub.add_parser(name)
     args = parser.parse_args(argv)
 
@@ -546,6 +675,7 @@ def main(argv=None) -> int:
         "forget": cmd_forget,
         "setup": cmd_setup,
         "doctor": cmd_doctor,
+        "fix": cmd_fix,
     }
     return dispatch[args.command](args)
 

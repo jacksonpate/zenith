@@ -99,7 +99,18 @@ endif()
 
 # Apply setcap for RPM
 # https://github.com/coreos/rpm-ostree/discussions/5036#discussioncomment-10291071
-set(CPACK_RPM_USER_FILELIST "%caps(cap_sys_admin,cap_sys_nice+p) ${SUNSHINE_EXECUTABLE_PATH}")
+#
+# An rpm filelist entry is matched against the installed path, so it has to be
+# absolute. SUNSHINE_EXECUTABLE_PATH is both: the packaging scripts pass an
+# absolute /usr/bin/zenith, while a plain `cmake` run defaults it to the bare
+# name (prep/init.cmake) — which matches nothing, and silently applies the caps
+# to no file at all. Normalise rather than assume either form.
+if(IS_ABSOLUTE "${SUNSHINE_EXECUTABLE_PATH}")
+    set(SUNSHINE_CAPS_FILE "${SUNSHINE_EXECUTABLE_PATH}")
+else()
+    set(SUNSHINE_CAPS_FILE "${CMAKE_INSTALL_FULL_BINDIR}/${SUNSHINE_EXECUTABLE_PATH}")
+endif()
+set(CPACK_RPM_USER_FILELIST "%caps(cap_sys_admin,cap_sys_nice+p) ${SUNSHINE_CAPS_FILE}")
 
 # Dependencies
 set(CPACK_DEB_COMPONENT_INSTALL ON)
@@ -107,6 +118,7 @@ set(CPACK_DEBIAN_PACKAGE_DEPENDS "\
             ${CPACK_DEB_PLATFORM_PACKAGE_DEPENDS} \
             debianutils, \
             libcap2, \
+            libcap2-bin, \
             libcurl4, \
             libdrm2, \
             libgbm1, \

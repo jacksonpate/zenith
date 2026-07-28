@@ -23,6 +23,8 @@ class Connector:
     monitor: Optional[str] = None  # EDID product name if readable
     is_vdd: bool = False
     driver: str = ""  # DRM driver of the parent card (amdgpu, i915, evdi, ...)
+    card: str = ""  # parent DRM card (card0, card1, ...)
+    vendor: str = ""  # PCI vendor id of the parent card (0x10de, 0x1002, ...)
 
 
 @dataclass
@@ -34,6 +36,8 @@ class Environment:
     connectors: List[Connector] = field(default_factory=list)
     is_root: bool = False
     has_passwordless_sudo: bool = False
+
+    encoder_card: str = ""  # DRM card that will encode (see detect.encoder_card)
 
     @property
     def vdd_connectors(self) -> List[Connector]:
@@ -51,6 +55,7 @@ class Environment:
             "tools": self.tools,
             "is_root": self.is_root,
             "has_passwordless_sudo": self.has_passwordless_sudo,
+            "encoder_card": self.encoder_card,
             "connectors": [
                 {
                     "name": c.name,
@@ -58,6 +63,9 @@ class Environment:
                     "enabled": c.enabled,
                     "monitor": c.monitor,
                     "is_vdd": c.is_vdd,
+                    "card": c.card,
+                    "driver": c.driver,
+                    "on_encoder_gpu": bool(c.card) and c.card == self.encoder_card,
                 }
                 for c in self.connectors
             ],
@@ -128,7 +136,8 @@ def scan_connectors(drm_glob: str = "/sys/class/drm/card*-*") -> List[Connector]
         card, _, name = base.partition("-")
         raw_edid = _read_bytes(os.path.join(sysfs, "edid"))
         monitor = edid_mod.monitor_name(raw_edid) if raw_edid else None
-        driver_link = os.path.join(os.path.dirname(sysfs), card, "device", "driver")
+        card_dir = os.path.join(os.path.dirname(sysfs), card, "device")
+        driver_link = os.path.join(card_dir, "driver")
         connectors.append(
             Connector(
                 sysfs=sysfs,
@@ -138,9 +147,55 @@ def scan_connectors(drm_glob: str = "/sys/class/drm/card*-*") -> List[Connector]
                 monitor=monitor,
                 is_vdd=monitor in VDD_MONITOR_NAMES,
                 driver=os.path.basename(os.path.realpath(driver_link)) if os.path.exists(driver_link) else "",
+                card=card,
+                vendor=_read(os.path.join(card_dir, "vendor")).lower(),
             )
         )
     return connectors
+
+
+# PCI vendor ids, as sysfs spells them.
+VENDOR_NVIDIA = "0x10de"
+VENDOR_AMD = "0x1002"
+VENDOR_INTEL = "0x8086"
+
+# DRM drivers that can carry a hardware encoder Zenith knows how to drive, and
+# which of Zenith's encoders picks them up.  Order matters below, not here.
+_VAAPI_DRIVERS = ("amdgpu", "i915", "xe", "radeon")
+
+
+def encoder_card(connectors: List[Connector], nv_version: Optional[str] = None) -> str:
+    """The DRM card whose GPU will encode this session, or "" if none will.
+
+    This has to agree with ``src/video.cpp``, where the encoder list is
+    ``{nvenc, vaapi, software}`` and the first one that validates wins.  So an
+    NVIDIA card with a new enough driver takes the session even on a machine
+    whose desktop is composited entirely by an iGPU — which is exactly the
+    hybrid-laptop case, and exactly where guessing wrong is expensive.
+
+    Why the display provider needs to know: KMS capture can only import a
+    buffer from the same GPU as the encoder, and a dma-buf from a *different*
+    GPU cannot be imported into CUDA at all.  Put the virtual display on the
+    wrong card and every frame takes a trip through system memory — which is
+    survivable at 1080p and is not at tablet resolutions.
+    """
+    if nv_version is None:
+        nv_version = nvidia_driver_version()
+    cards = {}  # card -> vendor, first connector wins (they all share the card)
+    for c in connectors:
+        if c.card and c.card not in cards:
+            cards[c.card] = (c.vendor, c.driver)
+
+    if nv_version and nvenc_supported(nv_version):
+        for card in sorted(cards):
+            vendor, driver = cards[card]
+            if vendor == VENDOR_NVIDIA or driver == "nvidia-drm":
+                return card
+    for card in sorted(cards):
+        _vendor, driver = cards[card]
+        if driver in _VAAPI_DRIVERS:
+            return card
+    return ""
 
 
 def wait_connector_enabled(name: str, timeout: float = 5.0, settle: float = 0.5) -> bool:
@@ -184,6 +239,7 @@ def detect(environ=os.environ, runner: Optional[Runner] = None) -> Environment:
         connectors=scan_connectors(),
         is_root=hasattr(os, "geteuid") and os.geteuid() == 0,
     )
+    env.encoder_card = encoder_card(env.connectors)
     if not env.is_root and which("sudo"):
         env.has_passwordless_sudo = runner.query(["sudo", "-n", "true"], timeout=5).ok
     return env

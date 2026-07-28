@@ -86,6 +86,23 @@ class DrmDebugfsProvider(VddProvider):
             return (not c.name.startswith(_EXCLUDED_NAME_PREFIXES)
                     and (c.driver or "") not in _EXCLUDED_DRIVERS)
 
+        # Which GPU will encode. A spare port on *that* card is worth more than
+        # any other property of a connector, because it is the difference between
+        # a zero-copy capture and one that round-trips every frame through system
+        # memory: KMS capture can only import a buffer from the encoder's own GPU,
+        # and a dma-buf from a foreign GPU cannot enter CUDA at all.
+        #
+        # Left unranked this is decided by connector name, which on a hybrid
+        # laptop reliably picks the wrong card — the iGPU's DP-1 sorts before the
+        # dGPU's DP-6, so the display lands on the GPU that is not encoding and
+        # the stream quietly drops to memory buffers. That survives 1080p and
+        # falls apart at tablet resolutions, where it reads as "the host is too
+        # slow" rather than "the display is on the wrong card".
+        encoder_card = getattr(env, "encoder_card", "") or ""
+
+        def affinity(c):
+            return 0 if encoder_card and c.card == encoder_card else 1
+
         # A connector we forced up in an earlier session and never let go of —
         # it is still "connected", carrying the EDID we wrote to it.
         #
@@ -98,10 +115,26 @@ class DrmDebugfsProvider(VddProvider):
         # the display stops being spawned per client and becomes a stale fixture
         # showing the last client's resolution.
         ours = [c for c in env.vdd_connectors if borrowable(c)]
+        reclaimable = {id(c) for c in ours}
         spares = ours + [c for c in env.disconnected_connectors if borrowable(c)]
-        # Prefer DisplayPort connectors: most tolerant of forced EDIDs.
-        spares.sort(key=lambda c: (0 if c.name.startswith("DP") else 1, c.name))
+        spares.sort(key=lambda c: (
+            affinity(c),  # the encoder's own GPU, above all else
+            0 if id(c) in reclaimable else 1,  # reclaim ours before taking a new port
+            0 if c.name.startswith("DP") else 1,  # DP tolerates forced EDIDs best
+            c.name,
+        ))
         return spares[0] if spares else None
+
+    def _cross_gpu(self, env, spare) -> bool:
+        """Is the only port we can borrow on a GPU that will not encode?
+
+        Not a failure — the stream works, and on a machine whose every dGPU port
+        is occupied it is the only option there is. It is a *cost*, and one worth
+        naming, because it is invisible from the outside and looks exactly like a
+        host that cannot keep up.
+        """
+        encoder_card = getattr(env, "encoder_card", "") or ""
+        return bool(spare and encoder_card and spare.card and spare.card != encoder_card)
 
     def probe(self, env, runner: Runner) -> Tuple[bool, str]:
         spare = self._pick_connector(env)
@@ -113,6 +146,10 @@ class DrmDebugfsProvider(VddProvider):
         # installed, and left the user, who is not root, with nothing.
         if not _helper():
             return False, "the privileged helper is not installed (run `sudo zenith-display setup`)"
+        if self._cross_gpu(env, spare):
+            return True, (f"can borrow {spare.name}, but it is on {spare.card} "
+                          f"({spare.driver or 'unknown'}) and {env.encoder_card} encodes "
+                          f"— every frame will cross GPUs through system memory")
         return True, f"can borrow {spare.name}"
 
     def ensure(self, env, runner: Runner) -> bool:

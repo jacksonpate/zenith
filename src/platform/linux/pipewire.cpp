@@ -3,7 +3,7 @@
  * @brief Shared classes for pipewire-based capture methods.
  */
 // standard includes
-#include <fstream>
+#include <string_view>
 
 // lib includes
 #include <gio/gio.h>
@@ -101,6 +101,7 @@ namespace pipewire {
     std::condition_variable frame_cv;  ///< Signals arrival or release of a PipeWire frame.
     size_t local_stride = 0;  ///< Local stride.
     bool frame_ready = false;  ///< Whether a PipeWire frame is ready to consume.
+    bool dmabuf_offered = false;  ///< Whether we advertised any DMA-BUF format during negotiation.
     // Two distinct memory pools
     std::vector<uint8_t> buffer_a;  ///< First staging buffer used for CPU-copy PipeWire frames.
     std::vector<uint8_t> buffer_b;  ///< Second staging buffer used for CPU-copy PipeWire frames.
@@ -314,6 +315,7 @@ namespace pipewire {
         bool use_dmabuf = n_dmabuf_infos > 0 && (mem_type == platf::mem_type_e::vaapi ||
                                                  mem_type == platf::mem_type_e::vulkan ||
                                                  (mem_type == platf::mem_type_e::cuda && display_is_nvidia));
+        stream_data.dmabuf_offered = use_dmabuf;
         if (use_dmabuf) {
           for (int i = 0; i < n_dmabuf_infos; i++) {
             auto format_param = build_format_parameter(&pod_builder, width, height, refresh_rate, dmabuf_infos[i].format, dmabuf_infos[i].modifiers, dmabuf_infos[i].n_modifiers);
@@ -687,7 +689,17 @@ namespace pipewire {
         BOOST_LOG(info) << "[pipewire] using DMA-BUF buffers"sv;
         buffer_types |= 1 << SPA_DATA_DmaBuf;
       } else {
-        BOOST_LOG(info) << "[pipewire] using memory buffers"sv;
+        // Name the reason. "using memory buffers" alone is the single most
+        // expensive line this backend can print and the least informative: it is
+        // a per-frame readback, and which of the two causes produced it decides
+        // whether the user can do anything about it.
+        if (!d->dmabuf_offered) {
+          BOOST_LOG(info) << "[pipewire] using memory buffers — DMA-BUF was not offered "
+                             "(the encoder cannot import this compositor's buffers)"sv;
+        } else {
+          BOOST_LOG(info) << "[pipewire] using memory buffers — the compositor accepted no "
+                             "DMA-BUF format we advertised"sv;
+        }
         buffer_types |= 1 << SPA_DATA_MemPtr;
       }
 
@@ -1220,35 +1232,38 @@ namespace pipewire {
         return -1;
       }
 
-      // Detect if this is a pure NVIDIA system (not hybrid Intel+NVIDIA)
-      // On hybrid systems, the wayland compositor typically runs on Intel,
-      // so DMA-BUFs from portal will come from Intel and cannot be imported into CUDA.
-      // Check if Intel GPU exists - if so, assume hybrid system and disable CUDA DMA-BUF.
-      bool has_intel_gpu = std::ifstream("/sys/class/drm/card0/device/vendor").good() ||
-                           std::ifstream("/sys/class/drm/card1/device/vendor").good();
-      if (has_intel_gpu) {
-        // Read vendor IDs to check for Intel (0x8086)
-        auto check_intel = [](const std::string &path) {
-          if (std::ifstream f(path); f.good()) {
-            std::string vendor;
-            f >> vendor;
-            return vendor == "0x8086";
-          }
-          return false;
-        };
-        bool intel_present = check_intel("/sys/class/drm/card0/device/vendor") ||
-                             check_intel("/sys/class/drm/card1/device/vendor");
-        if (intel_present) {
-          BOOST_LOG(info) << "[pipewire] Hybrid GPU system detected (Intel + discrete) - CUDA will use memory buffers"sv;
-          display_is_nvidia = false;
-        } else {
-          // No Intel GPU found, check if NVIDIA is present
-          const char *vendor = eglQueryString(egl_display.get(), EGL_VENDOR);
-          if (vendor && std::string_view(vendor).contains("NVIDIA")) {
-            BOOST_LOG(info) << "[pipewire] Pure NVIDIA system - DMA-BUF will be enabled for CUDA"sv;
-            display_is_nvidia = true;
-          }
-        }
+      // Can a dma-buf from this compositor reach the encoder?
+      //
+      // For CUDA the answer is yes only when the compositor itself renders on the
+      // NVIDIA GPU. A dma-buf belonging to another device cannot be imported into
+      // CUDA at all, so offering one here hands the encoder a buffer it can only
+      // refuse. EGL_VENDOR names the driver stack behind this display, and that is
+      // the stack that will allocate the buffers we would receive.
+      //
+      // This used to be gated on "is an Intel GPU present", read from card0 and
+      // card1 alone. That gate was always taken — it tested whether a vendor file
+      // *existed*, never what was in it — it could not see a GPU on card2 or
+      // later, and it conflated "an iGPU exists somewhere" with "the compositor
+      // renders on it", which is wrong on any desktop whose iGPU sits idle behind
+      // a dGPU driving every display.
+      const char *egl_vendor = eglQueryString(egl_display.get(), EGL_VENDOR);
+      const std::string_view vendor_sv = egl_vendor ? std::string_view(egl_vendor) : std::string_view {};
+      display_is_nvidia = vendor_sv.contains("NVIDIA");
+
+      if (mem_type == platf::mem_type_e::cuda && !display_is_nvidia) {
+        // Say this out loud, because from the outside it is indistinguishable
+        // from a host that is simply too slow: the only symptom is a frame rate
+        // that will not climb. Every frame takes a full round trip to system
+        // memory and back, and the cost scales with pixels — survivable at 1080p,
+        // not at a tablet's native resolution.
+        BOOST_LOG(warning) << "[pipewire] the compositor renders on "sv
+                           << (vendor_sv.empty() ? "another GPU"sv : vendor_sv)
+                           << " but NVENC will encode; a dma-buf cannot cross to CUDA, "
+                              "so every frame is copied through system memory."sv;
+        BOOST_LOG(warning) << "[pipewire] run `zenith-display doctor` — putting the virtual "
+                              "display on the NVIDIA GPU restores zero-copy capture."sv;
+      } else if (display_is_nvidia) {
+        BOOST_LOG(info) << "[pipewire] compositor and encoder share the NVIDIA GPU — DMA-BUF enabled for CUDA"sv;
       }
 
       if (eglQueryDmaBufFormatsEXT && eglQueryDmaBufModifiersEXT) {

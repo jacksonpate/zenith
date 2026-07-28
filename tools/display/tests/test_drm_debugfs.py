@@ -22,9 +22,10 @@ def _env(**kw):
     return Environment(**defaults)
 
 
-def _spare(name="DP-1", driver="nvidia"):
-    return Connector(sysfs=f"/sys/class/drm/card1-{name}", name=name,
-                     status="disconnected", enabled=False, driver=driver)
+def _spare(name="DP-1", driver="nvidia", card="card1", vendor=""):
+    return Connector(sysfs=f"/sys/class/drm/{card}-{name}", name=name,
+                     status="disconnected", enabled=False, driver=driver,
+                     card=card, vendor=vendor)
 
 
 @pytest.fixture
@@ -75,6 +76,59 @@ def test_a_spare_connector_outranks_evdi():
     the GPU that encodes it, so the buffer never has to cross devices."""
     names = [p.name for p in chain_for(_env(connectors=[_spare()]))]
     assert names.index("drm-debugfs") < names.index("evdi")
+
+
+def test_it_borrows_a_port_on_the_gpu_that_encodes(helper):
+    """A hybrid laptop's iGPU sorts first by connector name, and that is how the
+    virtual display ended up on the card that was not encoding.
+
+    Measured on an RTX 4050 + Radeon 680M laptop: the AMD iGPU owns DP-1..DP-5,
+    the NVIDIA dGPU owns DP-6, and NVENC takes the session. Ranked by name alone
+    the VDD lands on DP-1, and because a dma-buf from the iGPU cannot be imported
+    into CUDA the whole stream silently drops to memory buffers — a full readback
+    per frame, which holds up at 1080p and collapses at 2420x1668.
+    """
+    amd = [_spare(f"DP-{n}", driver="amdgpu", card="card1") for n in range(1, 6)]
+    nvidia = _spare("DP-6", driver="nvidia", card="card0", vendor="0x10de")
+    env = _env(connectors=[*amd, nvidia], encoder_card="card0")
+
+    ok, reason = DrmDebugfsProvider().probe(env, FakeRunner())
+    assert ok, reason
+    assert "DP-6" in reason, f"must borrow the encoder GPU's port, got: {reason}"
+
+
+def test_a_cross_gpu_port_still_works_but_says_so(helper):
+    """Every port on the encoder's GPU occupied. Borrowing the other card's is
+    still the right answer — a working stream beats no stream — but the cost is
+    invisible from outside and reads as a host that cannot keep up, so name it."""
+    env = _env(connectors=[_spare("DP-1", driver="amdgpu", card="card1")],
+               encoder_card="card0")
+    ok, reason = DrmDebugfsProvider().probe(env, FakeRunner())
+    assert ok, reason
+    assert "DP-1" in reason
+    assert "system memory" in reason, f"the penalty must be stated: {reason}"
+
+
+def test_no_encoder_card_falls_back_to_ranking_by_name(helper):
+    """Software encoding, or a GPU we do not recognise: there is no card to
+    prefer, so the old ordering stands rather than becoming arbitrary."""
+    env = _env(connectors=[_spare("DP-2", card="card1"), _spare("DP-1", card="card1")],
+               encoder_card="")
+    ok, reason = DrmDebugfsProvider().probe(env, FakeRunner())
+    assert ok and "DP-1" in reason
+
+
+def test_reclaims_our_own_stale_vdd_before_taking_a_fresh_port(helper):
+    """A forced connector we never released is not a spare — and left alone it
+    becomes a permanent fixture showing the last client's resolution. Within the
+    encoder's GPU, ours comes first."""
+    ours = Connector(sysfs="/sys/class/drm/card0-DP-7", name="DP-7", status="connected",
+                     enabled=True, monitor="Zenith-VDD", is_vdd=True, driver="nvidia",
+                     card="card0", vendor="0x10de")
+    fresh = _spare("DP-6", driver="nvidia", card="card0", vendor="0x10de")
+    env = _env(connectors=[fresh, ours], encoder_card="card0")
+    ok, reason = DrmDebugfsProvider().probe(env, FakeRunner())
+    assert ok and "DP-7" in reason, f"must reclaim our own VDD first: {reason}"
 
 
 def test_it_never_borrows_the_laptop_panel(helper):
