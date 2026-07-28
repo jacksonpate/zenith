@@ -1,8 +1,15 @@
 # Zenith CI — lean per-push validation + packaging across the target distros.
 #
-# Fast builds run with --skip-cuda; full CUDA (NVENC) release builds will land in a
-# separate release workflow with a cached CUDA runfile. The aarch64 Fedora job produces
-# rpms that install on Asahi Linux (Fedora Remix) on Apple Silicon.
+# x86_64 packages are built WITH CUDA, because without it NVENC is unreachable: kmsgrab
+# refuses the KMS path for a CUDA memory type when SUNSHINE_BUILD_CUDA is undefined and
+# reverts to copying every frame GPU -> RAM -> GPU. A --skip-cuda package therefore cannot
+# do zero-copy capture on any NVIDIA host, which is most of them. The 4.3 GB toolkit is
+# downloaded once and cached; linux_build.sh reuses build/cuda when nvcc is already there.
+#
+# aarch64 keeps --skip-cuda: those rpms target Asahi Linux on Apple Silicon, where there is
+# no NVIDIA GPU to encode on. CUDA is statically linked and libcuda is dlopened, so an
+# x86_64 CUDA build still installs and runs on AMD-only machines — verified: the package
+# gains no libcuda dependency.
 #
 # Upstream LizardByte workflows are disabled in this fork; this file is Zenith's CI.
 
@@ -50,36 +57,42 @@ jobs:
             sudo_flag: ""
             package: Zenith.deb
             artifact: zenith-ubuntu-24.04-amd64.deb
+            cuda_flag: "--cuda-runfile"
           - name: Debian 13 trixie (deb, x86_64)
             runner: ubuntu-latest
             container: debian:13
             sudo_flag: "--sudo-off"
             package: Zenith.deb
             artifact: zenith-debian-13-amd64.deb
+            cuda_flag: "--cuda-runfile"
           - name: Fedora 42 (rpm, x86_64)
             runner: ubuntu-latest
             container: fedora:42
             sudo_flag: "--sudo-off"
             package: Zenith.rpm
             artifact: zenith-fedora-42-x86_64.rpm
+            cuda_flag: "--cuda-runfile"
           - name: Fedora 42 (rpm, aarch64 / Asahi)
             runner: ubuntu-24.04-arm
             container: fedora:42
             sudo_flag: "--sudo-off"
             package: Zenith.rpm
             artifact: zenith-fedora-42-aarch64.rpm
+            cuda_flag: "--skip-cuda"
           - name: Fedora 44 (rpm, x86_64)
             runner: ubuntu-latest
             container: fedora:44
             sudo_flag: "--sudo-off"
             package: Zenith.rpm
             artifact: zenith-fedora-44-x86_64.rpm
+            cuda_flag: "--cuda-runfile"
           - name: Fedora 44 (rpm, aarch64 / Asahi)
             runner: ubuntu-24.04-arm
             container: fedora:44
             sudo_flag: "--sudo-off"
             package: Zenith.rpm
             artifact: zenith-fedora-44-aarch64.rpm
+            cuda_flag: "--skip-cuda"
     steps:
       - name: Install git (container jobs)
         if: matrix.container != ''
@@ -96,16 +109,45 @@ jobs:
         with:
           submodules: recursive
 
+      # The toolkit is 4.3 GB to fetch and ~7 GB extracted; downloading it per job
+      # per push would dominate the run. install_cuda() returns early when
+      # build/cuda/bin/nvcc already exists, so a restored cache is used as-is.
+      # Keyed on the distro too: the tree carries a glibc patch applied in place on
+      # the distros that need it, so one shared copy would be wrong for the others.
+      - name: Cache CUDA toolkit
+        if: matrix.cuda_flag == '--cuda-runfile'
+        uses: actions/cache@v4
+        with:
+          path: build/cuda
+          key: cuda-13.1.1-${{ matrix.artifact }}-v1
+
       - name: Build
         shell: bash
         run: |
           chmod +x ./scripts/linux_build.sh
           ./scripts/linux_build.sh \
             ${{ matrix.sudo_flag }} \
-            --skip-cuda \
+            ${{ matrix.cuda_flag }} \
             --publisher-name="jacksonpate" \
             --publisher-website="https://github.com/jacksonpate/zenith" \
             --publisher-issue-url="https://github.com/jacksonpate/zenith/issues"
+
+      # A --skip-cuda build is indistinguishable from a CUDA one until an NVIDIA
+      # user runs it and quietly loses zero-copy capture, so assert it here rather
+      # than discover it from a release. The marker is the body of an
+      # `#ifndef SUNSHINE_BUILD_CUDA` guard in kmsgrab.cpp: present means no CUDA.
+      - name: Verify CUDA is compiled in
+        if: matrix.cuda_flag == '--cuda-runfile'
+        shell: bash
+        run: |
+          bin=./build/zenith
+          test -f "$bin" || { echo "no binary at $bin"; exit 1; }
+          if grep -qaF "Attempting to use NVENC without CUDA support" "$bin"; then
+            echo "FAIL: ${{ matrix.artifact }} was built WITHOUT CUDA."
+            echo "NVENC would fall back to GPU -> RAM -> GPU for every frame."
+            exit 1
+          fi
+          echo "ok: CUDA is compiled into ${{ matrix.artifact }}"
 
       - name: Collect package
         shell: bash

@@ -92,11 +92,14 @@ app's environment (or Zenith's global env) to match.
     already has it.
   - **The binary was built without CUDA, on an NVIDIA host.** KMS capture
     refuses NVENC outright and reverts to GPU → RAM → GPU, so zero-copy is
-    unreachable no matter where the virtual display sits. Releases ship CUDA;
-    a local build must opt in (see
+    unreachable no matter where the virtual display sits. The x86_64 releases
+    ship CUDA from v0.2.0 onward; a local build must opt in (see
     [building locally](building_zenith_local.md)). Note this one only becomes
     visible *after* the capability problem is fixed — until then the host never
     reaches the KMS path to complain about it.
+    AMD needs none of this: VAAPI imports a dma-buf directly, so a Radeon host
+    reaches zero-copy capture — and present-paced vblank timing — as soon as the
+    binary has its capabilities.
   - **The virtual display is on a GPU that is not encoding.** On a hybrid
     laptop the iGPU owns the low-numbered connectors and the dGPU encodes, so a
     dma-buf cannot be imported into CUDA and every frame is copied through

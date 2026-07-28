@@ -16,7 +16,7 @@ Everything is driven from ``zenith-display`` (see ``cli.py``).  No external
 Python dependencies: the tool must run on a freshly installed distro.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 VDD_MONITOR_NAME = "Zenith-VDD"
 

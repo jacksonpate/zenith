@@ -9,8 +9,10 @@
 > ```
 >
 > So a build without CUDA cannot do zero-copy capture on an NVIDIA host at all — however the
-> virtual display is placed, and whatever capabilities the binary has. The official releases
-> ship CUDA; a local build has to opt in. `zenith-display doctor` detects this and says so.
+> virtual display is placed, and whatever capabilities the binary has. The **x86_64** release
+> packages ship CUDA from v0.2.0 onward (CI builds them with `--cuda-runfile` and asserts the
+> result); the aarch64 / Asahi rpms deliberately do not, since Apple Silicon has no NVIDIA GPU.
+> A local build has to opt in. `zenith-display doctor` detects this and says so.
 > It is easy to miss otherwise: it is one warning line at startup, and its only symptom is a
 > frame rate that will not climb.
 

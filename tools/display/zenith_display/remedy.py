@@ -314,10 +314,10 @@ def check_cuda(env, cwd: Optional[str] = None) -> Optional[Advisory]:
         detail=(
             "KMS capture refuses NVENC entirely without CUDA and falls back to copying every\n"
             "frame GPU -> RAM -> GPU, so zero-copy capture is unreachable on this host however\n"
-            "the virtual display is placed. The official packages ship CUDA; a local build\n"
-            "needs the toolkit at compile time:\n"
-            "  ./scripts/linux_build.sh --cuda-runfile\n"
-            "Reinstalling an official release is the quicker fix if you are not developing."
+            "the virtual display is placed. The x86_64 packages ship CUDA from v0.2.0 onward;\n"
+            "earlier releases and hand-built binaries do not. Installing a current release is\n"
+            "the quicker fix; to build it yourself:\n"
+            "  ./scripts/linux_build.sh --cuda-runfile"
         ),
     )
 
