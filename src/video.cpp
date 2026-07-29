@@ -1401,6 +1401,14 @@ namespace video {
   };
 
   static encoder_t *chosen_encoder;
+
+  /// Whether the last probe rejected an encoder only because no display could be
+  /// opened. Zenith's virtual display is created by the app's prep command, which
+  /// runs *after* the launch-time probe, so on a host whose only display is that
+  /// VDD the probe is guaranteed to find nothing and settle on software encoding.
+  /// This says "ask again once the display exists" rather than "the GPU cannot".
+  static bool probe_missing_display = false;
+
   int active_hevc_mode;  ///< HEVC mode selected by the most recent encoder probe.
   int active_av1_mode;  ///< AV1 mode selected by the most recent encoder probe.
   bool last_encoder_probe_supported_ref_frames_invalidation = false;  ///< Whether the last probe found reference-frame invalidation support.
@@ -3017,6 +3025,11 @@ namespace video {
     // If the encoder isn't supported at all (not even H.264), bail early
     reset_display(disp, encoder.platform_formats->dev_type, output_name, config_autoselect);
     if (!disp) {
+      // Failing here says nothing about the GPU: there was simply nothing to
+      // capture. Record that, so the caller can tell "this encoder cannot work"
+      // apart from "we asked at a moment when no display existed" — the two look
+      // identical from the outside and lead to opposite remedies.
+      probe_missing_display = true;
       return false;
     }
     if (!disp->is_codec_supported(encoder.h264.name, config_autoselect)) {
@@ -3196,6 +3209,10 @@ namespace video {
     return true;
   }
 
+  bool probe_missed_display() {
+    return probe_missing_display;
+  }
+
   int probe_encoders() {
     if (!allow_encoder_probing()) {
       // Error already logged
@@ -3212,6 +3229,7 @@ namespace video {
     // Restart encoder selection
     auto previous_encoder = chosen_encoder;
     chosen_encoder = nullptr;
+    probe_missing_display = false;
     active_hevc_mode = config::video.hevc_mode;
     active_av1_mode = config::video.av1_mode;
     last_encoder_probe_supported_ref_frames_invalidation = false;

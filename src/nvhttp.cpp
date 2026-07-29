@@ -1080,6 +1080,23 @@ namespace nvhttp {
 
         return;
       }
+
+      // The probe above ran before this app's prep commands, and on Zenith those
+      // are what create the virtual display. A host whose only display is that
+      // VDD therefore had nothing to capture a moment ago and settled for
+      // software encoding — not because the GPU cannot encode, but because it was
+      // asked at the one moment the display deliberately did not exist yet.
+      //
+      // The prep command has now run and waited for the connector to light, so
+      // ask again. Only when the first probe actually came up empty: a host with
+      // a monitor attached has already answered the question, and re-probing it
+      // would cost a second of capture setup for nothing.
+      if (video::probe_missed_display()) {
+        BOOST_LOG(info) << "No display existed when encoders were probed; re-probing now that the app's display is up"sv;
+        if (video::probe_encoders()) {
+          BOOST_LOG(warning) << "Re-probe still found no usable encoder; continuing with the earlier choice"sv;
+        }
+      }
     }
 
     tree.put("root.<xmlattr>.status_code", 200);
