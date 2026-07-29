@@ -65,10 +65,16 @@ platform:
 | **Asahi Linux (Apple Silicon)** | `zenith-fedora-*-aarch64.rpm` | Fedora Asahi Remix. |
 
 Then open `https://<host-ip>:47990`, set a username and password, and pair Moonlight/VoidLink.
-Zenith runs under its own identity — the `zenith` binary, the `io.github.jacksonpate.Zenith`
-service, and config under `~/.config/zenith/`. The Linux packages *Conflict with* and *Replace* a
-distro `sunshine` package, so installing Zenith supersedes an existing Sunshine rather than running
-a second host on the same ports. Settings and pairings do not migrate across, so you pair once.
+Zenith runs under its own identity — the `zenith` binary and the `io.github.jacksonpate.Zenith`
+service — but keeps Sunshine's config directory, `~/.config/sunshine/`, where it reads
+`zenith.conf` and writes `zenith.log`. The Linux packages *Conflict with* and *Replace* a distro
+`sunshine` package, so installing Zenith supersedes an existing Sunshine rather than running a
+second host on the same ports.
+
+Coming from Sunshine, that split decides what survives the switch: your **pairings and web UI
+login carry over** — they live in `sunshine_state.json`, which Zenith reads under its original
+name — while **settings do not**, because Zenith reads `zenith.conf` and leaves `sunshine.conf`
+alone. So you keep your paired devices and set your preferences again.
 
 > **Windows SmartScreen**: the installer isn't code-signed yet, so Windows may show
 > "Windows protected your PC." Click **More info → Run anyway**.
