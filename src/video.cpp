@@ -3371,6 +3371,17 @@ namespace video {
 
     if (chosen_encoder == nullptr) {
       const auto output_name {display_device::map_output_name(config::video.output_name)};
+
+      // Nothing was lit when we asked, which says nothing about the GPU and is
+      // not the end of the attempt: the launch path re-probes once an app's prep
+      // command has created the display this was looking for. Announcing it as
+      // fatal made a headless launch that goes on to succeed read like a crash
+      // in its own log, and sent people checking cables over a working host.
+      if (probe_missing_display) {
+        BOOST_LOG(info) << "No encoder chosen yet: nothing was lit to capture"sv;
+        return -1;
+      }
+
       BOOST_LOG(fatal) << "Unable to find display or encoder during startup."sv;
       if (!config::video.adapter_name.empty() || !output_name.empty()) {
         BOOST_LOG(fatal) << "Please ensure your manually chosen GPU and monitor are connected and powered on."sv;
