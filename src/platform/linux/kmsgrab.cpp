@@ -217,10 +217,16 @@ namespace platf {
       // For example: HDMI-A or HDMI
       std::uint32_t type;  ///< Type.
 
+      // The kernel's own numbering for this connector, which is what names it
+      // in sysfs and to every compositor: card0-DP-6 has type_id 6. Unrelated
+      // to `index` below, and the only one of the two an outside caller can name.
+      std::uint32_t type_id;  ///< Connector type ID, as the kernel numbers it.
+
       // Equals zero if not applicable
       std::uint32_t crtc_id;  ///< Crtc ID.
 
-      // For example HDMI-A-{index} or HDMI-{index}
+      // n'th connector of this type in DRM enumeration order. Internal ordering
+      // only — it is not what the connector is called anywhere outside kmsgrab.
       std::uint32_t index;  ///< Index.
 
       // ID of the connector
@@ -235,6 +241,7 @@ namespace platf {
     struct monitor_t {
       // Connector attributes
       std::uint32_t type;  ///< Type.
+      std::uint32_t type_id;  ///< Connector type ID, as the kernel numbers it.
       std::uint32_t index;  ///< Index.
 
       // Monitor index in the global list
@@ -714,6 +721,7 @@ namespace platf {
 
           monitors.emplace_back(connector_t {
             conn->connector_type,
+            conn->connector_type_id,
             crtc_id,
             index,
             conn->connector_id,
@@ -848,6 +856,7 @@ namespace platf {
       for (auto &connector : connectors) {
         result.emplace(connector.crtc_id, monitor_t {
                                             connector.type,
+                                            connector.type_id,
                                             connector.index,
                                           });
       }
@@ -994,7 +1003,7 @@ namespace platf {
 
             if (want_type) {
               auto it = crtc_map.find(plane->crtc_id);
-              if (it == std::end(crtc_map) || it->second.type != want_type || it->second.index != (std::uint32_t) want_index) {
+              if (it == std::end(crtc_map) || it->second.type != want_type || it->second.type_id != (std::uint32_t) want_index) {
                 continue;
               }
               BOOST_LOG(info) << "Capturing connector "sv << display_name;
@@ -2145,7 +2154,7 @@ namespace platf {
 
       for (auto &card_descriptor : cds) {
         for (auto &[_, monitor_descriptor] : card_descriptor.crtc_to_monitor) {
-          if (monitor_descriptor.index == index && monitor_descriptor.type == type) {
+          if (monitor_descriptor.type_id == index && monitor_descriptor.type == type) {
             monitor_descriptor.viewport.offset_x = monitor->viewport.offset_x;
             monitor_descriptor.viewport.offset_y = monitor->viewport.offset_y;
             monitor_descriptor.viewport.logical_width = monitor->viewport.logical_width;
@@ -2271,14 +2280,22 @@ namespace platf {
 
         auto it = crtc_to_monitor.find(plane->crtc_id);
 
-        // Zenith: name displays by connector ("DP-1") like the Wayland backend
-        // does, so `output_name = DP-1` matches during display refresh and
+        // Zenith: name displays by connector ("DP-6") like the Wayland backend
+        // does, so `output_name = DP-6` matches during display refresh and
         // capture can follow a specific output (e.g. the virtual display).
+        //
+        // This has to be the kernel's connector_type_id, not our own per-type
+        // ordinal. They agree often enough to look interchangeable — on a host
+        // whose only DisplayPort is DP-1, both are 1 — and diverge exactly when
+        // it matters: card0-DP-6 is the first DisplayPort kmsgrab walks, so the
+        // ordinal called it "DP-1" while every other component called it DP-6.
+        // The name then matched nothing during refresh, the index reset to 0,
+        // and capture silently followed whatever display happened to sort first.
         std::string display_name = std::to_string(count);
         if (it != std::end(crtc_to_monitor)) {
           auto type_name = kms::connector_type_name(it->second.type);
           if (!type_name.empty()) {
-            display_name = std::string {type_name} + '-' + std::to_string(it->second.index);
+            display_name = std::string {type_name} + '-' + std::to_string(it->second.type_id);
           }
         }
 
