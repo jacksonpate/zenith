@@ -1069,12 +1069,12 @@ namespace input {
     }
 
     if (packet->controllerNumber < 0 || packet->controllerNumber >= input->gamepads.size()) {
-      BOOST_LOG(warning) << "ControllerNumber out of range ["sv << packet->controllerNumber << ']';
+      BOOST_LOG(warning) << "ControllerNumber out of range ["sv << (int) packet->controllerNumber << ']';
       return;
     }
 
     if (input->gamepads[packet->controllerNumber].id >= 0) {
-      BOOST_LOG(warning) << "ControllerNumber already allocated ["sv << packet->controllerNumber << ']';
+      BOOST_LOG(warning) << "ControllerNumber already allocated ["sv << (int) packet->controllerNumber << ']';
       return;
     }
 
@@ -1240,13 +1240,15 @@ namespace input {
     }
 
     if (packet->controllerNumber < 0 || packet->controllerNumber >= input->gamepads.size()) {
-      BOOST_LOG(warning) << "ControllerNumber out of range ["sv << packet->controllerNumber << ']';
+      BOOST_LOG(warning) << "ControllerNumber out of range ["sv << (int) packet->controllerNumber << ']';
       return;
     }
 
     auto &gamepad = input->gamepads[packet->controllerNumber];
     if (gamepad.id < 0) {
-      BOOST_LOG(warning) << "ControllerNumber ["sv << packet->controllerNumber << "] not allocated"sv;
+      // Debug, not warning: clients legitimately stream motion/touch/battery/state packets for
+      // gamepad slots the host has not allocated, so this fires once per packet and floods the log.
+      BOOST_LOG(debug) << "ControllerNumber ["sv << (int) packet->controllerNumber << "] not allocated"sv;
       return;
     }
 
@@ -1273,13 +1275,15 @@ namespace input {
     }
 
     if (packet->controllerNumber < 0 || packet->controllerNumber >= input->gamepads.size()) {
-      BOOST_LOG(warning) << "ControllerNumber out of range ["sv << packet->controllerNumber << ']';
+      BOOST_LOG(warning) << "ControllerNumber out of range ["sv << (int) packet->controllerNumber << ']';
       return;
     }
 
     auto &gamepad = input->gamepads[packet->controllerNumber];
     if (gamepad.id < 0) {
-      BOOST_LOG(warning) << "ControllerNumber ["sv << packet->controllerNumber << "] not allocated"sv;
+      // Debug, not warning: clients legitimately stream motion/touch/battery/state packets for
+      // gamepad slots the host has not allocated, so this fires once per packet and floods the log.
+      BOOST_LOG(debug) << "ControllerNumber ["sv << (int) packet->controllerNumber << "] not allocated"sv;
       return;
     }
 
@@ -1305,13 +1309,15 @@ namespace input {
     }
 
     if (packet->controllerNumber < 0 || packet->controllerNumber >= input->gamepads.size()) {
-      BOOST_LOG(warning) << "ControllerNumber out of range ["sv << packet->controllerNumber << ']';
+      BOOST_LOG(warning) << "ControllerNumber out of range ["sv << (int) packet->controllerNumber << ']';
       return;
     }
 
     auto &gamepad = input->gamepads[packet->controllerNumber];
     if (gamepad.id < 0) {
-      BOOST_LOG(warning) << "ControllerNumber ["sv << packet->controllerNumber << "] not allocated"sv;
+      // Debug, not warning: clients legitimately stream motion/touch/battery/state packets for
+      // gamepad slots the host has not allocated, so this fires once per packet and floods the log.
+      BOOST_LOG(debug) << "ControllerNumber ["sv << (int) packet->controllerNumber << "] not allocated"sv;
       return;
     }
 
@@ -1336,7 +1342,7 @@ namespace input {
     }
 
     if (packet->controllerNumber < 0 || packet->controllerNumber >= input->gamepads.size()) {
-      BOOST_LOG(warning) << "ControllerNumber out of range ["sv << packet->controllerNumber << ']';
+      BOOST_LOG(warning) << "ControllerNumber out of range ["sv << (int) packet->controllerNumber << ']';
 
       return;
     }
@@ -1367,7 +1373,9 @@ namespace input {
     // If this gamepad has not been initialized, ignore it.
     // This could happen when platf::alloc_gamepad fails
     if (gamepad.id < 0) {
-      BOOST_LOG(warning) << "ControllerNumber ["sv << packet->controllerNumber << "] not allocated"sv;
+      // Debug, not warning: clients legitimately stream motion/touch/battery/state packets for
+      // gamepad slots the host has not allocated, so this fires once per packet and floods the log.
+      BOOST_LOG(debug) << "ControllerNumber ["sv << (int) packet->controllerNumber << "] not allocated"sv;
       return;
     }
 
