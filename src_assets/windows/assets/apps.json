@@ -2,10 +2,6 @@
   "env": {},
   "apps": [
     {
-      "name": "Desktop",
-      "image-path": "desktop.png"
-    },
-    {
       "name": "Headless",
       "prep-cmd": [
         {
@@ -33,6 +29,10 @@
       "name": "Steam Big Picture",
       "cmd": "steam://open/bigpicture",
       "prep-cmd": [
+        {
+          "do": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$(SUNSHINE_ROOT)\\scripts\\ZenithDisplay.ps1\" headless",
+          "undo": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$(SUNSHINE_ROOT)\\scripts\\ZenithDisplay.ps1\" restore"
+        },
         {
           "do": "",
           "undo": "steam://close/bigpicture"

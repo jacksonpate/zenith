@@ -4,10 +4,6 @@
   },
   "apps": [
     {
-      "name": "Desktop",
-      "image-path": "desktop.png"
-    },
-    {
       "name": "Headless",
       "image-path": "desktop.png",
       "prep-cmd": [
@@ -35,6 +31,11 @@
         "setsid steam steam://open/bigpicture"
       ],
       "prep-cmd": [
+        {
+          "do": "zenith-display headless",
+          "undo": "zenith-display restore",
+          "elevated": "false"
+        },
         {
           "do": "",
           "undo": "setsid steam steam://close/bigpicture"
