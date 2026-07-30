@@ -24,6 +24,13 @@ const config = ref(props.config)
     <input type="number" min="0" max="1000" class="form-control" id="minimum_fps_target" placeholder="0" v-model="config.minimum_fps_target" />
     <div class="form-text">{{ $t("config.minimum_fps_target_desc") }}</div>
   </div>
+
+  <!--max_fps_target-->
+  <div class="mb-3">
+    <label for="max_fps_target" class="form-label">{{ $t("config.max_fps_target") }}</label>
+    <input type="number" min="0" max="1000" class="form-control" id="max_fps_target" placeholder="0" v-model="config.max_fps_target" />
+    <div class="form-text">{{ $t("config.max_fps_target_desc") }}</div>
+  </div>
 </template>
 
 <style scoped>
