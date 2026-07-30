@@ -1038,6 +1038,8 @@ namespace nvhttp {
     host_audio = util::from_view(get_arg(args, "localAudioPlayMode"));
     auto launch_session = make_launch_session(host_audio, args);
 
+    bool probe_found_nothing {false};  ///< The pre-prep probe chose no encoder at all, so the re-probe is the last word.
+
     if (rtsp_stream::session_count() == 0) {
       // The display should be restored in case something fails as there are no other sessions.
       revert_display_configuration = true;
@@ -1051,12 +1053,25 @@ namespace nvhttp {
       // encoder matches the active GPU (which could have changed
       // due to hotplugging, driver crash, primary monitor change,
       // or any number of other factors).
+      //
+      // A probe that came up empty says one of two things, and only one of them
+      // is fatal here. If the GPU cannot encode, nothing later in this function
+      // changes that. But if it merely had nothing to capture, the display it
+      // was looking for is the one this app's prep commands are about to create,
+      // and answering 503 now guarantees it never will be: proc::execute lives
+      // past this return. Headless can only ever fail this way — its display
+      // does not exist until the app it belongs to launches — so leave the
+      // verdict to the re-probe below rather than deciding it a step too early.
       if (video::probe_encoders()) {
-        tree.put("root.<xmlattr>.status_code", 503);
-        tree.put("root.<xmlattr>.status_message", "Failed to initialize video capture/encoding. Is a display connected and turned on?");
-        tree.put("root.gamesession", 0);
+        if (!video::probe_missed_display()) {
+          tree.put("root.<xmlattr>.status_code", 503);
+          tree.put("root.<xmlattr>.status_message", "Failed to initialize video capture/encoding. Is a display connected and turned on?");
+          tree.put("root.gamesession", 0);
 
-        return;
+          return;
+        }
+
+        probe_found_nothing = true;
       }
     }
 
@@ -1094,6 +1109,22 @@ namespace nvhttp {
       if (video::probe_missed_display()) {
         BOOST_LOG(info) << "No display existed when encoders were probed; re-probing now that the app's display is up"sv;
         if (video::probe_encoders()) {
+          if (probe_found_nothing) {
+            // The first probe had no encoder to fall back on, and the display
+            // the prep command was supposed to bring up did not answer either.
+            // Now there is genuinely nothing to stream, and the app we started
+            // a moment ago has no session to belong to, so take it back down
+            // before reporting the failure the earlier return deferred.
+            BOOST_LOG(error) << "No usable encoder even after the app's display came up"sv;
+            proc::proc.terminate();
+
+            tree.put("root.<xmlattr>.status_code", 503);
+            tree.put("root.<xmlattr>.status_message", "Failed to initialize video capture/encoding. Is a display connected and turned on?");
+            tree.put("root.gamesession", 0);
+
+            return;
+          }
+
           BOOST_LOG(warning) << "Re-probe still found no usable encoder; continuing with the earlier choice"sv;
         }
       }

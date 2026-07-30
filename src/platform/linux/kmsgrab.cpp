@@ -1040,10 +1040,19 @@ namespace platf {
             });
 
             if (pos == std::end(card_descriptors)) {
-              // This code path shouldn't happen, but it's there just in case.
-              // card_descriptors is part of the guesswork after all.
-              BOOST_LOG(error) << "Couldn't find ["sv << entry.path() << "]: This shouldn't have happened :/"sv;
-              return -1;
+              // card_descriptors is filled by display_names() under whichever
+              // encoder filter was in force then, and it is a static that
+              // outlives the probe that wrote it. A card walked here but absent
+              // there is that list gone stale, which is routine on a hybrid
+              // laptop: the CUDA pass records only the Nvidia card, and the next
+              // encoder's capture walk reaches the AMD one holding the panel.
+              //
+              // Skipping the card costs this one monitor. Failing the walk costs
+              // every encoder including software, and a launch with no encoder
+              // at all never reaches the prep command — so on a headless host
+              // this is the difference between a stream and a permanent 503.
+              BOOST_LOG(warning) << "No descriptor for ["sv << entry.path() << "]; skipping this card"sv;
+              break;
             }
 
             // TODO: surf_sd = fb->to_sd();
