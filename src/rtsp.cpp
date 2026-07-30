@@ -1205,6 +1205,18 @@ namespace rtsp_stream {
       config.monitor.height = (int) util::from_view(args.at("x-nv-video[0].clientViewportHt"sv));
       config.monitor.width = (int) util::from_view(args.at("x-nv-video[0].clientViewportWd"sv));
       config.monitor.framerate = (int) util::from_view(args.at("x-nv-video[0].maxFPS"sv));
+
+      // Zenith: clamp the client's requested framerate at ingress, so the encoder, the per-frame
+      // bitrate budget and capture pacing all derive from one agreed value rather than the host
+      // producing frames the client will only throw away. Clamping here -- before the
+      // framerateX100 validation below -- lets that existing ratio test discard a
+      // clientRefreshRateX100 that no longer matches the capped rate.
+      if (config::video.max_fps_target > 0 && config.monitor.framerate > config::video.max_fps_target) {
+        const int capped = (int) config::video.max_fps_target;
+        BOOST_LOG(info) << "Capping requested framerate: "sv << config.monitor.framerate << " -> "sv << capped << " fps"sv;
+        config.monitor.framerate = capped;
+      }
+
       config.monitor.framerateX100 = (int) util::from_view(args.at("x-nv-video[0].clientRefreshRateX100"sv));
       // Validate framerateX100 against framerate. Some clients (e.g. Moonlight Android) send the
       // client display's refresh rate as clientRefreshRateX100, which may differ from the requested

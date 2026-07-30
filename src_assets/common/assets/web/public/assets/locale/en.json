@@ -287,6 +287,8 @@
         "max_bitrate_desc": "The maximum bitrate (in Kbps) that Zenith will encode the stream at. If set to 0, it will always use the bitrate requested by Moonlight.",
         "minimum_fps_target": "Minimum FPS Target",
         "minimum_fps_target_desc": "The lowest effective FPS a stream can reach. A value of 0 is treated as roughly half of the stream's FPS. A setting of 20 is recommended if you stream 24 or 30fps content.",
+        "max_fps_target": "Maximum FPS Target",
+        "max_fps_target_desc": "The highest FPS Zenith will stream at, regardless of what the client requests. 0 (the default) always honours the client's request. Use this to fix uneven frame pacing when the host's framerate is not a whole multiple of the client's display refresh — 75 FPS into a 60 Hz display, for example, leaves some refreshes showing a stale frame. Note that a clean multiple is usually better than capping: 120 FPS into 60 Hz keeps pacing even while halving frame age, at the cost of extra bandwidth and decoding.",
         "min_log_level": "Log Level",
         "min_log_level_0": "Verbose",
         "min_log_level_1": "Debug",
